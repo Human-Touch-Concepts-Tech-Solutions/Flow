@@ -1,0 +1,23 @@
+# Node / Next.js
+node_modules/
+.next/
+
+# Python / FastAPI
+__pycache__/
+*.pyc
+venv/
+.env
+
+# AI / Models
+*.bin
+*.pt
+*.safetensors
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
