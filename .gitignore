@@ -1,23 +1,74 @@
-# Node / Next.js
-node_modules/
-.next/
+# ==============================
+# Environment Variables
+# ==============================
+.env
+.env.*
+!.env.example
 
+# ==============================
+# Node / Next.js
+# ==============================
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ==============================
 # Python / FastAPI
+# ==============================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 venv/
 .env
 
-# AI / Models
+# ==============================
+# AI / Models (VERY IMPORTANT)
+# ==============================
+models/
 *.bin
 *.pt
 *.safetensors
-models/
+*.gguf
 
-# OS
+# ==============================
+# Docker
+# ==============================
+*.pid
+docker-compose.override.yml
+
+# ==============================
+# OS Files
+# ==============================
 .DS_Store
 Thumbs.db
 
-# IDE
+# ==============================
+# IDE / Editor
+# ==============================
 .vscode/
 .idea/
+
+# ==============================
+# Cloud / Deployment
+# ==============================
+.vercel/
+
+# ==============================
+# Security
+# ==============================
+*.pem
+*.key

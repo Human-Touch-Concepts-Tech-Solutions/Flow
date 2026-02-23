@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+
+  backend:
+    build: ./backend
+    container_name: backend_service
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_URL=http://ai:11434
+    depends_on:
+      - ai
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  ai:
+    image: ollama/ollama
+    container_name: ai_service
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 10g
+
+volumes:
+  ollama_data:
