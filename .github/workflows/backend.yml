@@ -27,4 +27,6 @@ jobs:
       - name: Check app imports
         run: |
           cd backend
-          python -c "import main"
+          # Export PYTHONPATH so Python sees the 'app' folder
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          python -c "from app.main import app; print('✅ Imports successful')"

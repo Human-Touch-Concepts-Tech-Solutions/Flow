@@ -8,4 +8,6 @@ httpx
 email-validator
 passlib[bcrypt]
 motor
-python-jose[cryptography]   
+python-jose[cryptography]
+authlib
+itsdangerous

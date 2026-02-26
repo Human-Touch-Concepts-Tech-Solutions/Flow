@@ -1,121 +1,132 @@
 // lib/api.js
 
-// Protected fetch – requires token, used after login (e.g. chat messages)
+/**
+ * Helper: Constructs the full URL including the dynamic API version.
+ * If no version is found in localStorage, it defaults to 'v1'.
+ */
+const getVersionedUrl = (endpoint) => {
+  const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+  
+  let version = "v1";
+  if (typeof window !== 'undefined') {
+    // We check if the backend has pinned this user to a specific version (e.g., v2)
+    version = localStorage.getItem("user_api_version") || "v1";
+  }
+
+  // Ensure endpoint starts with a single slash for consistency
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  
+  // Final Structure: https://your-api.com/api/v1/auth/register
+  return `${baseUrl}/api/${version}${cleanEndpoint}`;
+};
+
+/**
+ * Authenticated Fetch: Reuses JWT token and handles version-based redirects.
+ */
 export const authenticatedFetch = async (endpoint, options = {}) => {
-  // 1. Token Management
   const token = typeof window !== 'undefined' ? localStorage.getItem("access_token") : null;
   
   if (!token) {
-    // If we're on the client and have no token, redirect to login
     if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
       window.location.href = "/account/login";
     }
     return null;
   }
 
-  // 2. URL Preparation
-  const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
-  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  const fullUrl = `${baseUrl}${cleanEndpoint}`;
+  const fullUrl = getVersionedUrl(endpoint);
 
-  // 3. Header Construction
   const headers = {
     "Authorization": `Bearer ${token}`,
-    "ngrok-skip-browser-warning": "69420", // Bypasses the ngrok interstitial page
+    "ngrok-skip-browser-warning": "69420", // Bypass for development
     ...options.headers,
   };
 
-  // Only set application/json if we aren't sending a file (FormData)
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
 
   try {
-    const res = await fetch(fullUrl, {
-      ...options,
-      headers: headers,
-    });
+    const res = await fetch(fullUrl, { ...options, headers });
 
-    // 4. Handle Auth Expiration
+    // 1. Handle Version Upgrade (426 Upgrade Required)
+    if (res.status === 426) {
+      const data = await res.json();
+      // Backend tells us: "You need v2 for this user"
+      localStorage.setItem("user_api_version", data.required_version || "v2");
+      window.location.href = "/account/complete-profile"; 
+      return null;
+    }
+
+    // 2. Handle Token Expiration
     if (res.status === 401) {
       localStorage.removeItem("access_token");
       window.location.href = "/account/login";
       return null;
     }
 
-    // 5. Handle Server Errors (404, 500, etc.)
-    if (!res.ok) {
-      // Try to get error details, but don't crash if it's not JSON
-      try {
-        const errorData = await res.json();
-        console.warn(`API Error (${res.status}):`, errorData.detail || "Request failed");
-      } catch (e) {
-        console.warn(`API Error (${res.status}): could not parse error response.`);
-      }
-      return null;
-    }
+    if (!res.ok) return null;
 
-    // 6. Verify Content Type before parsing
     const contentType = res.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      return null; 
+    if (contentType && contentType.includes("application/json")) {
+      return await res.json();
     }
-
-    return await res.json();
+    return null;
 
   } catch (error) {
-    // This catches the "Failed to fetch" (Network timeout, Server restart, Ngrok limit)
-    // We log it as a warning instead of an error to keep the console clean during polling
-    console.warn("Connection hiccup, sync pending...");
+    console.warn("API Connection hiccup:", error);
     return null; 
   }
 };
 
-// Public fetch  with out authentication, used for things like landing page data or public resources. Still handles errors gracefully.
+/**
+ * Public Fetch: No token required, used for Register, Login, and Professions.
+ */
 export const publicFetch = async (endpoint, options = {}) => {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  const fullUrl = getVersionedUrl(endpoint);
 
-  if (!res.ok) {
-    let errorMessage = `Request failed (${res.status})`;
-    try {
-      const data = await res.json();
-      errorMessage = data.detail?.[0]?.msg || data.detail || errorMessage;
-    } catch {}
-    throw new Error(errorMessage);
+  try {
+    const res = await fetch(fullUrl, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+
+    if (!res.ok) {
+      let errorMessage = `Request failed (${res.status})`;
+      try {
+        const data = await res.json();
+        errorMessage = data.detail?.[0]?.msg || data.detail || errorMessage;
+      } catch {}
+      throw new Error(errorMessage);
+    }
+
+    return await res.json();
+  } catch (error) {
+    throw error;
   }
-
-  return res.json();
 };
 
-
-
-
-// Secure WebSocket connection with token authentication
+/**
+ * Secure WebSocket: Reuses the same versioning logic as HTTP.
+ */
 export const getSecureSocket = (endpoint) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem("access_token") : null;
   
   if (!token) {
-    console.error("No token found for WebSocket connection.");
+    console.error("WebSocket failed: No access token found.");
     return null;
   }
 
-  // 1. Prepare Base URL (ws:// or wss://)
-  const baseApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-  const wsBase = baseApiUrl.replace(/^http/, "ws"); // converts http/https to ws/wss
+  // Generate the versioned HTTP URL and convert to WS
+  const httpUrl = getVersionedUrl(endpoint);
   
-  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  // Converts http://... to ws://... and https://... to wss://...
+  const wsUrl = httpUrl.replace(/^http/, "ws");
   
-  // 2. Append token as query parameter for backend validation
-  const fullUrl = `${wsBase}${cleanEndpoint}?token=${token}`;
+  // Append token as query param for the FastAPI handshake
+  const finalUrl = `${wsUrl}?token=${token}`;
 
-  // 3. Create the native WebSocket instance
-  const socket = new WebSocket(fullUrl);
-
-  return socket;
+  return new WebSocket(finalUrl);
 };

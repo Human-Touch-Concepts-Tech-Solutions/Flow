@@ -1,14 +1,18 @@
 version: "3.9"
 
 services:
-
   backend:
     build: ./backend
     container_name: backend_service
     ports:
       - "8000:8000"
+    # --- KEY ADDITIONS FOR HOT-RELOAD ---
+    volumes:
+      - ./backend:/app  # Maps your local folder to the container folder
     environment:
       - AI_URL=http://ai:11434
+      - PYTHONPATH=/app # Tells Python that 'app' is the root package
+    # ------------------------------------
     depends_on:
       - ai
     deploy:
