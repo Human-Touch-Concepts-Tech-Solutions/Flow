@@ -6,12 +6,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
+
 #Local imports 
+from app.core.connection import MongoConnection, MistralConnection
+from app.api.v1.auth import router as auth_v1
+from app.core.database import DatabaseProcess
 
 
 # Load environment variables from .env file
 load_dotenv()
-
+INTELLIGENCE_API_URL = os.getenv("MISTRAL_ADDR")
+print(INTELLIGENCE_API_URL)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -19,17 +24,25 @@ logger = logging.getLogger(__name__)
 
 
 
+#Mistral connection instance (AI service)
+ai_conn = MistralConnection()
+mongo = MongoConnection()
+
+
+
+
+
+
 # fastAp instance
-app = FastAPI()
-
-
-
 app = FastAPI(
     title="Flowtru Assistant API",
     description="API for Flowtru Assistant, a personal assistant that helps you manage your tasks, calendar, and more.",
     version="2.0.0",
 
 )
+
+#router setup 
+app.include_router(auth_v1, prefix="/api/v1/auth")
 
 
 # CORS middleware
@@ -62,7 +75,25 @@ async def startup_event():
     # Initialize database connections, load models, etc. here  
     pass
 
+    #Mistral connection test
+    ai_ready = await ai_conn.check_ai_health()
+    if not ai_ready:
+        logger.warning("⚠️ Mistral/Ollama is not responding. AI features will be disabled.")
+        return False
+    app.state.ai = ai_conn # Attach to state for use in routes
 
+    # Mongo DB service connection
+    await mongo.open_connection()
+    
+    # 2. Create the process instance using the connected DB
+    # IMPORTANT: Make sure mongo.db is not None here!
+    if mongo.db is not None:
+        app.state.db_process = DatabaseProcess(mongo.db)
+        logger.info("✅ DatabaseProcess attached to app.state")
+    else:
+        logger.error("❌ MongoDB Database instance is None!")
+
+   
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -84,6 +115,12 @@ async def health_check():
         "environment": os.getenv("ENV", "development")
     }
 
+
+@app.get("/api/v1/test-ai")
+async def test_ai(prompt: str = "Hello Mistral, are you there, list 40 things you can do ?"):
+    ai_service: MistralConnection = app.state.ai
+    result = await ai_service.generate_response(prompt)
+    return {"status": "AI Responded", "output": result.get("response")}
 
 #test endpoints to verify API functionality
 

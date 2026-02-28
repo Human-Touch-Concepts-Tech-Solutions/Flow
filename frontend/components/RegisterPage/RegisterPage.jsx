@@ -43,12 +43,12 @@ export default function RegisterPage() {
   useEffect(() => {
     const loadProfessions = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/professions`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/professions`);
         if (res.ok) {
           const data = await res.json();
-          setProfessionSuggestions(data);
+          setProfessionSuggestions(data.professions);
         }
-      } catch (err) {
+      } catch (error) {
         setProfessionSuggestions(["Student", "Developer", "Designer", "Writer"]);
       }
     };
@@ -107,8 +107,16 @@ export default function RegisterPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        setServerError(data.detail || "Registration failed.");
-        return;
+  // Check if detail is an array (Pydantic validation errors)
+  if (Array.isArray(data.detail)) {
+    // Take the message from the first error object
+    setServerError(data.detail[0].msg); 
+  } else {
+    // Otherwise, it's a simple string error from our custom exceptions
+    setServerError(typeof data.detail === 'string' ? data.detail : "Registration failed.");
+  }
+  setIsLoading(false);
+  return;
       }
 
       localStorage.setItem("pending_email", form.email);

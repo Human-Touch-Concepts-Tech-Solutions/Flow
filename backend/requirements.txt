@@ -1,12 +1,15 @@
 fastapi
 uvicorn[standard]
 requests
-pymongo
 python-dotenv
 pydantic
 httpx
 email-validator
-passlib[bcrypt]
+# The ONLY pin we strictly need to stop the bcrypt/passlib crash:
+bcrypt==3.1.7
+passlib[bcrypt]==1.7.4
+# Let these find their own compatible versions:
+pymongo
 motor
 python-jose[cryptography]
 authlib
