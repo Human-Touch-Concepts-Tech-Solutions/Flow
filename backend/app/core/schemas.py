@@ -63,3 +63,15 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+# Additional schemas for OTP requests and responses, token management, and other authentication-related data structures can be defined here to support the authentication flow in the application.
+class SendOtpRequest(BaseModel):
+    email: EmailStr
+
+
+# Schema for OTP verification requests, containing the user's email and the OTP code they received. This schema is used to validate the data when users attempt to verify their email addresses during the authentication process.
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    code: str

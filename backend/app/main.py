@@ -8,9 +8,17 @@ from dotenv import load_dotenv
 
 
 #Local imports 
-from app.core.connection import MongoConnection, MistralConnection
+from app.core.connection import (
+    MongoConnection, 
+    MistralConnection, 
+    EmailConnection,
+
+
+)
+from app.core.security import OneTimeAuth, TokenSecurity
 from app.api.v1.auth import router as auth_v1
 from app.core.database import DatabaseProcess
+
 
 
 # Load environment variables from .env file
@@ -93,6 +101,10 @@ async def startup_event():
     else:
         logger.error("❌ MongoDB Database instance is None!")
 
+
+    #start email connection
+    email_conn = EmailConnection()
+    app.state.otp_service = OneTimeAuth(email_conn)
    
 
 @app.on_event("shutdown")

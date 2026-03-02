@@ -1,6 +1,6 @@
 from typing import Optional, Dict
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from datetime import datetime, time
+from datetime import datetime, timedelta, time
 from dotenv import load_dotenv
 import os
 
@@ -28,7 +28,7 @@ class DatabaseProcess:
     # User Account Creation with Automatic Role Assignment and Data Formatting
     async def create_user(self, user_data: Dict, api_version: str = "v1"):
         # 1. Automatic Role Selection
-        target_admin = os.getenv("SUPER_ADMIN_EMAIL")
+        target_admin = os.getenv("ADMIN_EMAIL")
         
         # Check if this user matches your admin email
         if user_data["email"].lower() == target_admin:
@@ -128,3 +128,25 @@ class DatabaseProcess:
             return True
 
         return None
+    
+
+
+    # Additional database methods for user retrieval, updates, task management, and session handling can be implemented here to support the application's functionality.
+    async def store_refresh_token(self, email: str, refresh_token: str):
+    # Use self to access the class instance
+    # Use self.db to access the MongoDB connection
+        expiry = datetime.utcnow() + timedelta(days=7)
+        
+        await self.db.users.update_one(
+            {"email": email},
+            {
+                "$set": {
+                    "refresh_token": refresh_token,
+                    "token_expires": expiry  # Matches your original field name
+                }
+            },
+            upsert=True  # Creates the record if it doesn't exist
+        )
+
+    async def get_user_by_email(self, email: str):
+        return await self.db.users.find_one({"email": email})

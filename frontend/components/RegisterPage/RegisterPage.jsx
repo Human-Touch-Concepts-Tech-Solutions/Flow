@@ -10,6 +10,8 @@ import {
   SuggestionBox, SuggestionItem,
 } from "./RegisterPageStyles";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
 export default function RegisterPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -21,43 +23,34 @@ export default function RegisterPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    dob: "",
-    gender: "",
-    profession: "",
-    password: "",
-    confirmPassword: "",
+    firstName: "", lastName: "", email: "", phone: "",
+    dob: "", gender: "", profession: "", password: "", confirmPassword: "",
   });
 
-  // Helper for Age Limit (15 years)
   const getMaxDate = () => {
     const today = new Date();
-    const maxDate = new Date(today.getFullYear() - 15, today.getMonth(), today.getDate());
+    const maxDate = new Date(today.getFullYear() - 10, today.getMonth(), today.getDate());
     return maxDate.toISOString().split("T")[0];
   };
 
-  // 1. Fetch Professions from Backend on Mount
   useEffect(() => {
     const loadProfessions = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/professions`);
+        const res = await fetch(`${API_BASE}/api/v1/auth/professions`);
         if (res.ok) {
           const data = await res.json();
           setProfessionSuggestions(data.professions);
         }
       } catch (error) {
-        setProfessionSuggestions(["Student", "Developer", "Designer", "Writer"]);
+        setProfessionSuggestions(["Student", "Developer", "Designer", "Writer", "Teacher", "Researcher", "Marketer", "Entrepreneur"]);
       }
     };
     loadProfessions();
   }, []);
 
-  // Validation
+  // Validation Rules
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const phoneValid = /^[0-9]{7,15}$/.test(form.phone); // Now Required
+  const phoneValid = /^[0-9]{7,15}$/.test(form.phone);
 
   const passwordRules = {
     length: form.password.length >= 8,
@@ -87,11 +80,16 @@ export default function RegisterPage() {
     setServerError(null);
     setIsLoading(true);
 
+    // Format phone to international standard
+    const phoneNumber = form.phone.startsWith("0") 
+      ? "+234" + form.phone.slice(1) 
+      : form.phone;
+
     const payload = {
       first_name: form.firstName,
       last_name: form.lastName,
-      email: form.email,
-      phone: form.phone,
+      email: form.email.toLowerCase(), // Normalize email for backend checks
+      phone: phoneNumber,
       date_of_birth: form.dob,
       gender: form.gender.toLowerCase(),
       profession: form.profession,
@@ -99,7 +97,8 @@ export default function RegisterPage() {
     };
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/register`, {
+      // 1. Register User
+      const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -107,22 +106,38 @@ export default function RegisterPage() {
 
       const data = await res.json();
       if (!res.ok) {
-  // Check if detail is an array (Pydantic validation errors)
-  if (Array.isArray(data.detail)) {
-    // Take the message from the first error object
-    setServerError(data.detail[0].msg); 
-  } else {
-    // Otherwise, it's a simple string error from our custom exceptions
-    setServerError(typeof data.detail === 'string' ? data.detail : "Registration failed.");
-  }
-  setIsLoading(false);
-  return;
+        setServerError(Array.isArray(data.detail) ? data.detail[0].msg : data.detail);
+        setIsLoading(false);
+        return;
       }
 
-      localStorage.setItem("pending_email", form.email);
-      router.push("/account/verify-otp");
+      // 2. Trigger OTP or Admin Check via backend
+      const otpRes = await fetch(`${API_BASE}/api/v1/auth/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email.toLowerCase() }),
+      });
+
+      const otpData = await otpRes.json();
+
+      if (!otpRes.ok) {
+        setServerError("Account created, but failed to initiate verification.");
+        setIsLoading(false);
+        return;
+      }
+
+      // 3. Success - Set email for verification pages
+      localStorage.setItem("pending_email", form.email.toLowerCase());
+      
+      // 4. NEW REDIRECT LOGIC based on backend response
+      if (otpData.next_step === "admin_verify") {
+        router.push("/account/admin/admin-verify");
+      } else {
+        router.push("/account/verify-otp");
+      }
+
     } catch (err) {
-      setServerError("Connection error.");
+      setServerError("Connection error to backend.");
     } finally {
       setIsLoading(false);
     }
@@ -133,17 +148,26 @@ export default function RegisterPage() {
       <Content>
         <Logo src="/logo.svg" alt="Logo" />
         <StepIndicator>Step {step} of 2</StepIndicator>
-
-        {step === 1 && (
+        
+        {step === 1 ? (
           <>
             <h2>Personal Information</h2>
             <Row>
               <Input $valid={touched.firstName ? !!form.firstName : null} placeholder="First Name" value={form.firstName} onBlur={() => handleBlur("firstName")} onChange={(e) => handleChange("firstName", e.target.value)} />
               <Input $valid={touched.lastName ? !!form.lastName : null} placeholder="Last Name" value={form.lastName} onBlur={() => handleBlur("lastName")} onChange={(e) => handleChange("lastName", e.target.value)} />
             </Row>
-            <Input $valid={touched.email ? emailRegex.test(form.email) : null} placeholder="Email Address" type="email" value={form.email} onBlur={() => handleBlur("email")} onChange={(e) => handleChange("email", e.target.value)} />
-            <Input $valid={touched.phone ? phoneValid : null} placeholder="Phone Number" type="tel" value={form.phone} onBlur={() => handleBlur("phone")} onChange={(e) => handleChange("phone", e.target.value.replace(/\D/g, ""))} />
-            <Input $valid={touched.dob ? (form.dob !== "" && form.dob <= getMaxDate()) : null} type="date" max={getMaxDate()} value={form.dob} onBlur={() => handleBlur("dob")} onChange={(e) => handleChange("dob", e.target.value)} />
+            <Input $valid={touched.email ? emailRegex.test(form.email) : null} placeholder="Email" type="email" value={form.email} onBlur={() => handleBlur("email")} onChange={(e) => handleChange("email", e.target.value)} />
+            <Input $valid={touched.phone ? phoneValid : null} placeholder="Phone" type="tel" value={form.phone} onBlur={() => handleBlur("phone")} onChange={(e) => handleChange("phone", e.target.value.replace(/\D/g, ""))} />
+            
+            <Input 
+              type="date" 
+              max={getMaxDate()} 
+              value={form.dob} 
+              $valid={touched.dob ? (form.dob !== "" && form.dob <= getMaxDate()) : null}
+              onBlur={() => handleBlur("dob")}
+              onChange={(e) => handleChange("dob", e.target.value)} 
+            />
+            
             <GenderGroup>
               {["Male", "Female"].map((g) => (
                 <GenderOption key={g} $active={form.gender === g} onClick={() => { handleChange("gender", g); handleBlur("gender"); }}>{g}</GenderOption>
@@ -151,36 +175,64 @@ export default function RegisterPage() {
             </GenderGroup>
             <Button disabled={!stepOneValid} onClick={() => setStep(2)}>Next</Button>
           </>
-        )}
-
-        {step === 2 && (
+        ) : (
           <>
             <p style={{ cursor: "pointer", fontSize: "14px", color: "#475569", marginBottom: "10px" }} onClick={() => setStep(1)}>← Back</p>
             <h2>Account Setup</h2>
+            
             <div style={{ position: "relative" }}>
-                <Input $valid={touched.profession ? !!form.profession : null} placeholder="Field of Work" value={form.profession} autoComplete="off" name="work-field" onBlur={() => { handleBlur("profession"); setTimeout(() => setShowSuggestions(false), 150); }} onChange={(e) => { handleChange("profession", e.target.value); setShowSuggestions(true); }} />
-                {showSuggestions && filteredSuggestions.length > 0 && (
+              <Input 
+                $valid={touched.profession ? !!form.profession : null}
+                placeholder="Field of Work" 
+                value={form.profession} 
+                onBlur={() => { handleBlur("profession"); setTimeout(() => setShowSuggestions(false), 150); }}
+                onChange={(e) => { handleChange("profession", e.target.value); setShowSuggestions(true); }} 
+              />
+              {showSuggestions && filteredSuggestions.length > 0 && (
                 <SuggestionBox>
-                    {filteredSuggestions.map((item) => (
-                    <SuggestionItem key={item} onClick={() => { handleChange("profession", item); setShowSuggestions(false); }}>{item}</SuggestionItem>
-                    ))}
+                  {filteredSuggestions.map((p) => (
+                    <SuggestionItem key={p} onClick={() => { handleChange("profession", p); setShowSuggestions(false); }}>{p}</SuggestionItem>
+                  ))}
                 </SuggestionBox>
-                )}
+              )}
             </div>
+
             <div style={{ position: "relative" }}>
-                <Input $valid={touched.password ? passwordStrong : null} placeholder="Password" type={showPassword ? "text" : "password"} value={form.password} onBlur={() => handleBlur("password")} onChange={(e) => handleChange("password", e.target.value)} />
-                <span style={{ position: "absolute", right: "15px", top: "12px", cursor: "pointer" }} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <FiEyeOff /> : <FiEye />}</span>
+              <Input 
+                $valid={touched.password ? passwordStrong : null}
+                placeholder="Password" 
+                type={showPassword ? "text" : "password"} 
+                value={form.password} 
+                onBlur={() => handleBlur("password")}
+                onChange={(e) => handleChange("password", e.target.value)} 
+              />
+              <span style={{ position: "absolute", right: "15px", top: "12px", cursor: "pointer" }} onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? <FiEyeOff /> : <FiEye />}
+              </span>
             </div>
+
             <PasswordHintList>
-              <PasswordHintItem $valid={passwordRules.length}>8+ chars</PasswordHintItem>
-              <PasswordHintItem $valid={passwordRules.uppercase}>Uppercase</PasswordHintItem>
-              <PasswordHintItem $valid={passwordRules.lowercase}>Lowercase</PasswordHintItem>
-              <PasswordHintItem $valid={passwordRules.number}>Number</PasswordHintItem>
-              <PasswordHintItem $valid={passwordRules.symbol}>Symbol</PasswordHintItem>
+              <PasswordHintItem $valid={passwordRules.length}>At least 8 characters</PasswordHintItem>
+              <PasswordHintItem $valid={passwordRules.uppercase}>Include uppercase</PasswordHintItem>
+              <PasswordHintItem $valid={passwordRules.lowercase}>Include lowercase</PasswordHintItem>
+              <PasswordHintItem $valid={passwordRules.number}>Include number</PasswordHintItem>
+              <PasswordHintItem $valid={passwordRules.symbol}>Include symbol</PasswordHintItem>
             </PasswordHintList>
-            <Input $valid={touched.confirmPassword ? (form.password && form.password === form.confirmPassword) : null} placeholder="Confirm Password" type="password" value={form.confirmPassword} onBlur={() => handleBlur("confirmPassword")} onChange={(e) => handleChange("confirmPassword", e.target.value)} />
-            {serverError && <div style={{ color: "#ef4444", fontSize: "14px", textAlign: "center", padding: "8px", background: "#fee2e2", borderRadius: "8px", marginBottom: "10px" }}>{serverError}</div>}
-            <Button disabled={!stepTwoValid || isLoading} onClick={handleSubmit}>{isLoading ? "Creating..." : "Create Account"}</Button>
+
+            <Input 
+              $valid={touched.confirmPassword ? (form.password && form.password === form.confirmPassword) : null}
+              placeholder="Confirm Password" 
+              type="password" 
+              value={form.confirmPassword} 
+              onBlur={() => handleBlur("confirmPassword")}
+              onChange={(e) => handleChange("confirmPassword", e.target.value)} 
+            />
+
+            {serverError && <p style={{color: '#ef4444', fontSize: '14px', textAlign: 'center', background: '#fee2e2', padding: '8px', borderRadius: '8px'}}>{serverError}</p>}
+            
+            <Button disabled={!stepTwoValid || isLoading} onClick={handleSubmit}>
+              {isLoading ? "Creating account..." : "Create Account"}
+            </Button>
           </>
         )}
       </Content>
