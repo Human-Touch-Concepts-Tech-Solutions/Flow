@@ -97,7 +97,7 @@ class MistralConnection:
 
 
 
-
+# Connection for Email 
 class EmailConnection:
     def __init__(self):
         self.smtp_server = os.getenv("SMTP_SERVER")
@@ -154,3 +154,22 @@ class EmailConnection:
         except Exception as e:
             print(f"EMAIL ERROR: {e}")
             return False
+
+
+
+
+class OAuthConnection:
+    def __init__(self):
+        self.oauth = OAuth()
+        self._register_google()
+
+    def _register_google(self):
+        self.oauth.register(
+            name="google",
+            client_id=os.getenv("GOOGLE_CLIENT_ID"),
+            client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={
+                "scope": "openid email profile"
+            }
+        )

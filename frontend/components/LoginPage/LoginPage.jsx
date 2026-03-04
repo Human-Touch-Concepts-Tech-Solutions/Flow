@@ -85,7 +85,7 @@ export default function LoginPage() {
   };
 
   const handleOAuth = (provider) => {
-    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/oauth/${provider}`;
+    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/oauth/${provider}`;
   };
 
   return (

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, status, HTTPException, Request
 import os
-
+from datetime import datetime, timedelta
+from fastapi.responses import JSONResponse, RedirectResponse
 #local imports 
 from app.core.schemas import(
      UserCreate, 
@@ -261,4 +262,60 @@ async def reset_password(body: ResetPasswordFinalRequest, request: Request):
     return {"message": "Password updated successfully."}
 
 
+
+
+@router.get("/oauth/google")
+async def google_login(request: Request):
+    oauth = request.app.state.oauth
+    # Ensure this URI is registered in Google Cloud Console!
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") 
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@router.get("/oauth/google/callback")
+async def google_callback(request: Request):
+    oauth = request.app.state.oauth
+    db = request.app.state.db_process
+
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get("userinfo")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Google authentication failed")
+
+    if not user_info:
+        raise HTTPException(status_code=400, detail="Failed to fetch user info")
+
+    email = user_info["email"].lower()
+    admin_email = os.getenv("ADMIN_EMAIL", "").lower()
+    if admin_email and email == admin_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Admin accounts must login using the secure Admin Portal."
+        )
+    # Check if user exists
+    user = await db.get_user_by_email(email)
+
+    if not user:
+        # Create new OAuth user
+        user_data = {
+            "first_name": user_info.get("given_name", "User"),
+            "last_name": user_info.get("family_name", ""),
+            "email": email,
+            "auth_type": "google", # Good to track how they signed up
+            "is_verified": True,   # Google already verified them
+            "password": None       # Explicitly no password
+        }
+        await db.create_user(user_data)
+
+    # Generate tokens using our standard security class
+    access_token, refresh_token = TokenSecurity.create_tokens(email)
+
+    # Store refresh token in DB
+    
+    await db.store_refresh_token(email, refresh_token)
+    # Redirect to frontend with tokens
+    frontend_redirect = os.getenv("FRONTEND_OAUTH_REDIRECT")
+    return RedirectResponse(
+        url=f"{frontend_redirect}?access_token={access_token}&refresh_token={refresh_token}"
+    )
 

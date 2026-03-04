@@ -12,6 +12,8 @@ from app.core.connection import (
     MongoConnection, 
     MistralConnection, 
     EmailConnection,
+    OAuthConnection,
+
 
 
 )
@@ -105,6 +107,10 @@ async def startup_event():
     #start email connection
     email_conn = EmailConnection()
     app.state.otp_service = OneTimeAuth(email_conn)
+
+    #Google oAuth
+    oauth_manager = OAuthConnection()
+    app.state.oauth = oauth_manager.oauth
    
 
 @app.on_event("shutdown")

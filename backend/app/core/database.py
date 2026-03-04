@@ -31,7 +31,8 @@ class DatabaseProcess:
         target_admin = os.getenv("ADMIN_EMAIL")
         
         # Check if this user matches your admin email
-        if user_data["email"].lower() == target_admin:
+        email = user_data["email"].lower()
+        if target_admin and email == target_admin.lower():
             role = "admin"
             access_level = 5
         else:
@@ -43,42 +44,45 @@ class DatabaseProcess:
         hashed_pw = PasswordSecurity.hash_password(password) if password else None
         
         dob = user_data.get("date_of_birth")
-        # Ensure dob is a datetime for Mongo
         dob_datetime = datetime.combine(dob, time.min) if dob else None
+
+        # Determine if this is an OAuth signup
+        is_oauth = user_data.get("auth_type") == "google"
 
         user_doc = {
             "first_name": user_data["first_name"],
             "last_name": user_data["last_name"],
-            "email": user_data["email"].lower(),
+            "email": email,
             "phone": user_data.get("phone"),
             "date_of_birth": dob_datetime,
-            "gender": user_data["gender"],
-            "profession": user_data["profession"],
+            # FIXED: Using .get() ensures it won't crash if Google doesn't provide these
+            "gender": user_data.get("gender", "Not Specified"),
+            "profession": user_data.get("profession", "Other"),
             "hashed_password": hashed_pw,
-            "role": role,                # AUTO ADDED
-            "access_level": access_level, # AUTO ADDED
-            "api_version": api_version,   # AUTO ADDED
+            "role": role,
+            "access_level": access_level,
+            "api_version": api_version,
             "is_active": True,
-            "is_oauth": False,
+            "is_oauth": is_oauth, # Dynamically set based on signup type
             "created_at": datetime.utcnow(),
-            "is_verified": False,
+            "is_verified": user_data.get("is_verified", False),
             "subscription": {
-            "plan": "free",
-            "status": "active"
-        },
-        "credits": {
-            "balance": 10,
-            "total_used": 0,
-            "total_bought": 0
-        }
+                "plan": "free",
+                "status": "active"
+            },
+            "credits": {
+                "balance": 10,
+                "total_used": 0,
+                "total_bought": 0
+            }
         }
         
-       
-       
         result = await self.users_collection.insert_one(user_doc)
-         # Profession Validation (Optional, can be removed if not needed)
-        clean_profession = user_data.get('profession', '').strip().title()
+        
+        # Profession Validation
+        clean_profession = user_doc["profession"].strip().title()
         await self.manage_self_content(action="add", category="professions", data=clean_profession)
+        
         user_doc["_id"] = str(result.inserted_id)
         user_doc.pop("hashed_password", None)
         return user_doc
@@ -142,19 +146,19 @@ class DatabaseProcess:
 
     # Additional database methods for user retrieval, updates, task management, and session handling can be implemented here to support the application's functionality.
     async def store_refresh_token(self, email: str, refresh_token: str):
-    # Use self to access the class instance
-    # Use self.db to access the MongoDB connection
+        # Calculate expiry internally
         expiry = datetime.utcnow() + timedelta(days=7)
         
-        await self.db.users.update_one(
-            {"email": email},
+        # Use the collection variable defined in __init__
+        await self.users_collection.update_one(
+            {"email": email.lower()},
             {
                 "$set": {
                     "refresh_token": refresh_token,
-                    "token_expires": expiry  # Matches your original field name
+                    "token_expires": expiry
                 }
             },
-            upsert=True  # Creates the record if it doesn't exist
+            upsert=True
         )
 
     async def get_user_by_email(self, email: str):
