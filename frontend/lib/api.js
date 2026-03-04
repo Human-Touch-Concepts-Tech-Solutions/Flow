@@ -23,8 +23,10 @@ const getVersionedUrl = (endpoint) => {
 /**
  * Authenticated Fetch: Reuses JWT token and handles version-based redirects.
  */
+// lib/api.js
+
 export const authenticatedFetch = async (endpoint, options = {}) => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem("access_token") : null;
+  let token = typeof window !== 'undefined' ? localStorage.getItem("access_token") : null;
   
   if (!token) {
     if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
@@ -34,10 +36,9 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
   }
 
   const fullUrl = getVersionedUrl(endpoint);
-
   const headers = {
     "Authorization": `Bearer ${token}`,
-    "ngrok-skip-browser-warning": "69420", // Bypass for development
+    "ngrok-skip-browser-warning": "69420",
     ...options.headers,
   };
 
@@ -46,22 +47,52 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
   }
 
   try {
-    const res = await fetch(fullUrl, { ...options, headers });
+    let res = await fetch(fullUrl, { ...options, headers });
 
-    // 1. Handle Version Upgrade (426 Upgrade Required)
+    // 1. Handle Version Upgrade
     if (res.status === 426) {
       const data = await res.json();
-      // Backend tells us: "You need v2 for this user"
       localStorage.setItem("user_api_version", data.required_version || "v2");
       window.location.href = "/account/complete-profile"; 
       return null;
     }
 
-    // 2. Handle Token Expiration
+    // 2. SMART REFRESH LOGIC (The "Assistant")
     if (res.status === 401) {
-      localStorage.removeItem("access_token");
-      window.location.href = "/account/login";
-      return null;
+      const refreshToken = localStorage.getItem("refresh_token");
+
+      if (refreshToken) {
+        try {
+          // Attempt to get a new access token
+          const refreshRes = await fetch(getVersionedUrl("/auth/refresh"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+          });
+
+          if (refreshRes.ok) {
+            const data = await refreshRes.json();
+            // Save the new pair
+            localStorage.setItem("access_token", data.access_token);
+            localStorage.setItem("refresh_token", data.refresh_token);
+
+            // RETRY the original request with the new token
+            headers["Authorization"] = `Bearer ${data.access_token}`;
+            res = await fetch(fullUrl, { ...options, headers });
+          } else {
+            // Refresh token expired too!
+            throw new Error("Refresh failed");
+          }
+        } catch (refreshErr) {
+          // Everything failed, go to login
+          localStorage.clear();
+          window.location.href = "/account/login";
+          return null;
+        }
+      } else {
+        window.location.href = "/account/login";
+        return null;
+      }
     }
 
     if (!res.ok) return null;
@@ -77,7 +108,6 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
     return null; 
   }
 };
-
 /**
  * Public Fetch: No token required, used for Register, Login, and Professions.
  */

@@ -75,3 +75,31 @@ class SendOtpRequest(BaseModel):
 class VerifyOtpRequest(BaseModel):
     email: EmailStr
     code: str
+
+
+# for login request and response, including access token generation and token type specification. These schemas facilitate the login process and ensure that the correct data is provided and returned during authentication.
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+# Schema for token refresh requests, containing the refresh token that users provide to obtain new access tokens. This schema is essential for implementing secure token rotation and management in the authentication flow.
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+# schemas for password reset functionality, including requests for initiating a password reset, verifying OTPs for password resets, and finalizing the password reset process with a new password. These schemas ensure that the password reset flow is secure and that all necessary data is validated properly.
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class VerifyResetOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+class ResetPasswordFinalRequest(BaseModel):
+    reset_token: str  # The "Handshake" token
+    new_password: str = Field(..., min_length=8)

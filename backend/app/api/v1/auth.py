@@ -6,7 +6,13 @@ from app.core.schemas import(
      UserCreate, 
      UserResponse,
      SendOtpRequest,
-     VerifyOtpRequest)
+     VerifyOtpRequest,
+     LoginRequest,
+     LoginResponse,
+     RefreshRequest,
+     ForgotPasswordRequest,
+     VerifyResetOTPRequest,
+     ResetPasswordFinalRequest)
 from app.core.database import DatabaseProcess
 from app.core.security import PasswordSecurity, OneTimeAuth, TokenSecurity
 
@@ -118,3 +124,141 @@ async def verify_otp(body: VerifyOtpRequest, request: Request):
         "is_admin": is_admin,
         "token_type": "bearer"
     }
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login(
+    body: LoginRequest,
+    request: Request
+):
+    db: DatabaseProcess = request.app.state.db_process
+    
+    # 1. Find user
+    user = await db.get_user_by_email(body.email)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+
+    # 2. Check Password using the Class method
+    if not PasswordSecurity.verify_password(body.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+
+    # 3. Check Verification Status
+    if not user.get("is_verified", False):
+        otp_service = request.app.state.otp_service
+        await otp_service.generate_and_send(body.email)
+        
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="VERIFY_REQUIRED"
+        )
+
+    # 4. Generate tokens using your NEW combined method
+    # This returns a tuple: (access, refresh)
+    access_token, refresh_token = TokenSecurity.create_tokens(body.email)
+
+    # 5. Store refresh token in DB
+    await db.store_refresh_token(body.email, refresh_token)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+
+
+# Route for refreshing tokens, which validates the old refresh token, generates new tokens, and updates the database with the new refresh token to ensure secure token rotation and management in the authentication flow.
+
+@router.post("/refresh", response_model=LoginResponse)
+async def refresh_token(body: RefreshRequest, request: Request):
+    db: DatabaseProcess = request.app.state.db_process
+
+    # 1. Validate the old refresh token against the DB
+    email = await db.validate_refresh_token(body.refresh_token)
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid or expired refresh token"
+        )
+
+    # 2. Generate a fresh pair (Rotation)
+    new_access, new_refresh = TokenSecurity.create_tokens(email)
+
+    # 3. Update the database with the new refresh token
+    # This invalidates the old one and stores the new one
+    await db.store_refresh_token(email, new_refresh)
+
+    return {
+        "access_token": new_access,
+        "refresh_token": new_refresh,
+        "token_type": "bearer"
+    }
+
+
+
+
+# recover password flow, which includes sending a reset OTP, verifying the OTP, and allowing the user to set a new password. This flow ensures that only verified users can reset their passwords and that all necessary security measures are in place to protect user accounts during the password reset process.
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest, request: Request):
+    db = request.app.state.db_process
+    otp_service = request.app.state.otp_service
+    admin_email = os.getenv("ADMIN_EMAIL", "").lower()
+
+    # 1. Block Admin Recovery via Public Route
+    if body.email.lower() == admin_email:
+        print(f"SECURITY ALERT: Recovery attempt on ADMIN account: {body.email}")
+        return {"message": "If an account exists, a reset code has been sent."}
+
+    user = await db.get_user_by_email(body.email)
+    
+    # 2. Logic for existing user
+    if user:
+        await otp_service.generate_and_send(body.email, purpose="reset")
+    else:
+        # We don't tell the frontend, but we log it for debugging
+        print(f"INFO: Recovery requested for non-existent email: {body.email}")
+
+    return {"message": "If an account exists, a reset code has been sent."}
+
+@router.post("/verify-reset-otp")
+async def verify_reset_otp(body: VerifyResetOTPRequest, request: Request):
+    otp_service = request.app.state.otp_service
+    
+    # REMOVED 'await' because verify is a regular def, not async def
+    is_valid = otp_service.verify(body.email, body.otp, purpose="reset")
+    
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+
+    reset_token = TokenSecurity.create_temporary_token(body.email, purpose="password_reset")
+    return {"reset_token": reset_token}
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordFinalRequest, request: Request):
+    db = request.app.state.db_process
+    
+    # 1. Verify the temporary reset token
+    email = await TokenSecurity.verify_temporary_token(body.reset_token, purpose="password_reset")
+    if not email:
+        raise HTTPException(status_code=400, detail="Reset session expired. Please start over.")
+
+    # 2. Hash and Update
+    hashed_password = PasswordSecurity.hash_password(body.new_password)
+    await db.update_user_password(email, hashed_password)
+
+    # 3. SECURITY BOOST: Revoke all refresh tokens for this user
+    # This kicks out any hackers currently logged in
+    await db.revoke_all_user_tokens(email)
+
+    return {"message": "Password updated successfully."}
+
+
+

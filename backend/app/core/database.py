@@ -62,6 +62,15 @@ class DatabaseProcess:
             "is_oauth": False,
             "created_at": datetime.utcnow(),
             "is_verified": False,
+            "subscription": {
+            "plan": "free",
+            "status": "active"
+        },
+        "credits": {
+            "balance": 10,
+            "total_used": 0,
+            "total_bought": 0
+        }
         }
         
        
@@ -150,3 +159,24 @@ class DatabaseProcess:
 
     async def get_user_by_email(self, email: str):
         return await self.db.users.find_one({"email": email})
+    
+
+
+    async def update_user_password(self, email: str, hashed_password: str):
+        """Updates the user's password in MongoDB."""
+        await self.users_collection.update_one(
+            {"email": email.lower()},
+            {"$set": {"hashed_password": hashed_password}}
+        )
+
+    async def revoke_all_user_tokens(self, email: str):
+        """
+        SECURITY: Clears the stored refresh token inside the user document.
+        """
+        await self.users_collection.update_one(
+            {"email": email.lower()},
+            {"$set": {
+                "refresh_token": None,
+                "token_expires": None
+            }}
+        )

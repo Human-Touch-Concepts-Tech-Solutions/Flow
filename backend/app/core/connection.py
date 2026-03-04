@@ -106,32 +106,39 @@ class EmailConnection:
         self.password = os.getenv("EMAIL_PASSWORD")
         self.logo_url = os.getenv("APP_LOGO_URL", "https://flowtru.vercel.app/logo.svg")
 
-    def send_otp_email(self, to_email: str, otp: str, is_admin: bool = False):
+    def send_otp_email(self, to_email: str, otp: str, is_admin: bool = False, is_recovery: bool = False):
         msg = MIMEMultipart()
         msg['From'] = self.username
         msg['To'] = to_email
         
+        # Determine content based on the flags
         if is_admin:
-            subject = "Admin Access Verification"
+            subject = "Admin Access Verification - Flow"
             title = "Admin Security Check"
             message = "An admin login was attempted. Use the secret code below:"
+        elif is_recovery:
+            subject = "Reset Your Password - Flow"
+            title = "Password Recovery"
+            message = "We received a request to reset your password. Use the code below to proceed:"
         else:
-            subject = "Verify Your Account"
-            title = "Welcome to Our Platform!"
+            subject = "Verify Your Account - Flow"
+            title = "Welcome to Flow!"
             message = "Please use the following One-Time Password to verify your email:"
 
-        # Professional HTML Template
+        # Merged Professional HTML Template
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; border: 1px solid #eee; padding: 20px; border-radius: 10px;">
             <div style="text-align: center; margin-bottom: 20px;">
                 <img src="{self.logo_url}" alt="Logo" style="width: 120px;">
             </div>
             <h2 style="color: #333; text-align: center;">{title}</h2>
-            <p style="color: #666; font-size: 16px; line-height: 1.5;">{message}</p>
+            <p style="color: #666; font-size: 16px; line-height: 1.5; text-align: center;">{message}</p>
             <div style="background: #f4f7ff; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
                 <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #2563eb;">{otp}</span>
             </div>
-            <p style="font-size: 12px; color: #999; text-align: center;">This code will expire in 5 minutes. If you did not request this, please ignore this email.</p>
+            <p style="font-size: 12px; color: #999; text-align: center;">
+                This code will expire in 5 minutes. If you did not request this, please ignore this email.
+            </p>
         </div>
         """
         
