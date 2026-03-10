@@ -55,7 +55,7 @@ export default function LoginPage() {
         
         // 1. Check if they are an admin
         if (result.role === "admin") {
-           
+           document.cookie = `user_role=admin; path=/; max-age=86400; SameSite=Strict`;
             router.push("/account/portal/admin/ChatInterface");
             return;
         }

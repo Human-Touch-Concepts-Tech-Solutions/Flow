@@ -68,7 +68,7 @@ export default function Navigation() {
   className="desktop-only" 
   onClick={() => {
     // Option A: Just refresh the server components
-    router.refresh(); 
+    router.push("/account/portal/ChatInterface"); 
     
     // Option B: Full hard reload if you really need to wipe state
     // window.location.reload(); 

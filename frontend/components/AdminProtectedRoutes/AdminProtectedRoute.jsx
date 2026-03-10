@@ -35,7 +35,7 @@ export default function AdminProtectedRoute({ children }) {
         } else {
           // It's a valid user, but NOT an admin. Redirect to chat.
           setIsAuthorized(false);
-          router.push("/account/ChatInterface");
+          router.push("/account/portal/ChatInterface");
         }
 
       } catch (err) {
