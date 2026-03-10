@@ -89,7 +89,7 @@ export default function Otp() {
       localStorage.setItem("refresh_token", data.refresh_token);
       localStorage.removeItem("pending_email");
 
-      router.push("/account/ChatInterface");
+      router.push("/account/portal/ChatInterface");
 
     } catch (err) {
       setError("Network error. Please check your connection.");

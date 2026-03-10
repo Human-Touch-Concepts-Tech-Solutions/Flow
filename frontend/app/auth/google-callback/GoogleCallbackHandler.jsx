@@ -16,7 +16,7 @@ export default function GoogleCallbackHandler() {
       localStorage.setItem('refresh_token', refreshToken);
       
       // 2. Redirect to dashboard/chat
-      router.push('/chat');
+      router.push('/account/portal/ChatInterface');
     } else {
       // Handle error
       router.push('/login?error=oauth_failed');

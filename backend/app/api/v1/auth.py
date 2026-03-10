@@ -1,7 +1,8 @@
-from fastapi import APIRouter, status, HTTPException, Request
+from fastapi import APIRouter, status, HTTPException, Request, Depends
 import os
 from datetime import datetime, timedelta
 from fastapi.responses import JSONResponse, RedirectResponse
+from bson import ObjectId
 #local imports 
 from app.core.schemas import(
      UserCreate, 
@@ -166,11 +167,13 @@ async def login(
 
     # 5. Store refresh token in DB
     await db.store_refresh_token(body.email, refresh_token)
+    
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "role": user.get("role", "user") # This can help frontend distinguish Admin vs User
     }
 
 
@@ -319,3 +322,53 @@ async def google_callback(request: Request):
         url=f"{frontend_redirect}?access_token={access_token}&refresh_token={refresh_token}"
     )
 
+
+
+
+# ChatInterface routes will be protected by the TokenSecurity.get_current_user dependency in the route definitions, ensuring that only authenticated users can access the chat functionalities. The get_current_user method will validate the JWT access token, extract the user's email and admin status, and allow access to the chat routes accordingly, providing a secure authentication mechanism for both regular users and admins accessing their respective chat interfaces.
+#route example for fetching user-specific greeting configuration, which can be used to personalize the chat interface based on user preferences or roles. This route is protected by the TokenSecurity.get_current_user dependency, ensuring that only authenticated users can access their personalized settings, and it demonstrates how to return dynamic content that can enhance the user experience in the chat interface.
+@router.get("/user-info")
+async def get_user_info(
+    request: Request,
+    current_email: str = Depends(TokenSecurity.get_current_user)
+):
+    db = request.app.state.db_process
+    user = await db.get_user_by_email(current_email)
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Return everything the frontend needs to identify and authorize the user
+    return {
+        "first_name": user.get("first_name"),
+        "last_name": user.get("last_name"),
+        "email": user.get("email"),
+        "role": user.get("role"), # This helps us distinguish Admin vs User
+        "credits": user.get("credits"),
+        "subscription": user.get("subscription"),
+        "is_verified": user.get("is_verified", False)
+    }
+
+
+
+
+
+
+
+
+
+# logging out a user by deleting their refresh token(s) from the database, which effectively invalidates their session and requires them to re-authenticate to obtain new tokens for continued access. This route is protected by the TokenSecurity.get_current_user dependency, ensuring that only authenticated users can log out of their own sessions, and it provides a secure way to manage user sessions and enhance account security.
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(
+    request: Request,
+    # This retrieves the email (or user identifier) from the token
+    user_email: str = Depends(TokenSecurity.get_current_user) 
+):
+    db_process = request.app.state.db_process
+    
+    # Use the method you already defined in DatabaseProcess
+    await db_process.revoke_all_user_tokens(user_email)
+    
+    print(f"User {user_email} logged out successfully.")
+    
+    return {"status": "success", "message": "Logged out successfully"}

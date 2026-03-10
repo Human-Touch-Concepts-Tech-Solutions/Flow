@@ -48,8 +48,16 @@ export default function AdminProtectedRoute({ children }) {
     checkAuth();
   }, [router]);
 
-  if (isAuthorized === null) return <div>Loading Admin Security...</div>;
-  if (!isAuthorized) return null;
+ if (isAuthorized === null) {
+  // Use a Fragment here so the layout doesn't "jump" when this disappears
+  return (
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+       Loading security...
+    </div>
+  );
+}
 
-  return <>{children}</>;
+if (!isAuthorized) return null;
+
+return <>{children}</>;
 }

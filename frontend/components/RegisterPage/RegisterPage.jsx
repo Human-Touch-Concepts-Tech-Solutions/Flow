@@ -131,7 +131,7 @@ export default function RegisterPage() {
       
       // 4. NEW REDIRECT LOGIC based on backend response
       if (otpData.next_step === "admin_verify") {
-        router.push("/account/admin/admin-verify");
+        router.push("/account/admin-verify");
       } else {
         router.push("/account/verify-otp");
       }

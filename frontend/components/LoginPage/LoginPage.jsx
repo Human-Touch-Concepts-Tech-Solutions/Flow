@@ -34,55 +34,59 @@ export default function LoginPage() {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      setError("Please fill in all fields");
-      return;
+        setError("Please fill in all fields");
+        return;
     }
 
     setLoading(true);
     setError("");
 
     try {
-      // Note: publicFetch usually handles the base URL, 
-      // ensuring it points to /api/v1/auth/login
-      const result = await publicFetch("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
+        const result = await publicFetch("/auth/login", {
+            method: "POST",
+            body: JSON.stringify({ email, password }),
+        });
+  
+        // Store tokens
+        localStorage.setItem("access_token", result.access_token);
+        localStorage.setItem("refresh_token", result.refresh_token);
 
-      // Store both tokens
-      localStorage.setItem("access_token", result.access_token);
-      localStorage.setItem("refresh_token", result.refresh_token);
-
-      // 1. Check the URL for "intent=upgrade"
-      const params = new URLSearchParams(window.location.search);
-      const isUpgrading = params.get("intent") === "upgrade";
-      
-      // 2. Get the saved plan
-      const pendingPlanRaw = sessionStorage.getItem("pending_plan");
-
-      if (pendingPlanRaw && isUpgrading) {
-        const plan = JSON.parse(pendingPlanRaw);
-        if (plan.planType !== "Free") {
-          router.push("/account/checkout");
-          return; 
+        // --- NEW REDIRECT LOGIC ---
+        
+        // 1. Check if they are an admin
+        if (result.role === "admin") {
+           
+            router.push("/account/portal/admin/ChatInterface");
+            return;
         }
-      }
 
-      // 3. Otherwise, go to Chat
-      router.push("/account/ChatInterface");
+        // 2. Handle specific "upgrade" intent for regular users
+        const params = new URLSearchParams(window.location.search);
+        const isUpgrading = params.get("intent") === "upgrade";
+        const pendingPlanRaw = sessionStorage.getItem("pending_plan");
+
+        if (pendingPlanRaw && isUpgrading) {
+            const plan = JSON.parse(pendingPlanRaw);
+            if (plan.planType !== "Free") {
+                router.push("/account/portal/checkout");
+                return; 
+            }
+        }
+
+        // 3. Default: Regular User Chat
+        router.push("/account/portal/ChatInterface");
 
     } catch (err) {
-      // NEW: Handle the verification redirect
-      if (err.message === "VERIFY_REQUIRED") {
-        localStorage.setItem("pending_email", email);
-        router.push("/account/verify-otp");
-      } else {
-        setError(err.message || "Login failed");
-      }
+        if (err.message === "VERIFY_REQUIRED") {
+            localStorage.setItem("pending_email", email);
+            router.push("/account/verify-otp");
+        } else {
+            setError(err.message || "Login failed");
+        }
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
   const handleOAuth = (provider) => {
     window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/oauth/${provider}`;

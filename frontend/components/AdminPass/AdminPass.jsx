@@ -19,7 +19,7 @@ export default function AdminVerify() {
   useEffect(() => {
     const storedEmail = localStorage.getItem("pending_email");
     if (!storedEmail) {
-      router.push("/register");
+      router.push("/account/login");
       return;
     }
     setEmail(storedEmail);
@@ -43,7 +43,7 @@ export default function AdminVerify() {
         localStorage.setItem("access_token", data.access_token);
         localStorage.setItem("refresh_token", data.refresh_token);
         localStorage.removeItem("pending_email");
-        router.push("/admin/dashboard");
+        router.push("/account/portal/admin/ChatInterface");
       } else {
         setError(data.detail || "Invalid Master Key");
       }

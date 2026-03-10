@@ -55,15 +55,16 @@ export default function ProtectedRoute({ children }) {
   }, [router]);
 
   // While checking auth (first render)
-  if (isAuthorized === null) {
-    return <div>Loading... Checking authentication</div>; // Or a spinner component
-  }
+if (isAuthorized === null) {
+  // Use a Fragment here so the layout doesn't "jump" when this disappears
+  return (
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+       Loading security...
+    </div>
+  );
+}
 
-  // If not authorized → redirect already happened, but safety render nothing
-  if (!isAuthorized) {
-    return null;
-  }
+if (!isAuthorized) return null;
 
-  // Authorized → show the page content
-  return <>{children}</>;
+return <>{children}</>;
 }
