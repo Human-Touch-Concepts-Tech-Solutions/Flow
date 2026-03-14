@@ -175,13 +175,13 @@ export default function MessageList({ messages = [], isLoading = false }) {
       gap: '8px', 
       marginBottom: '8px', 
       padding: '6px', 
-      background: '#d6d8db', 
+      background: '#000000', 
       borderRadius: '6px',
       cursor: 'pointer' 
     }}
   >
     <FileIcon fileName={file.name} />
-    <span style={{ fontSize: '0.85rem', color: '#000000' }}>{file.name}</span>
+    <span style={{ fontSize: '0.85rem', color: '#ffffff' }}>{file.name}</span>
     
     {/* Show spinner if this file is downloading, otherwise show the download icon */}
     {downloadingId === i ? (
@@ -189,7 +189,7 @@ export default function MessageList({ messages = [], isLoading = false }) {
      <AiOutlineLoading3Quarters size={17} style={{ marginLeft: 'auto', color: '#000000' }} />
   </SpinningIcon>
 ) : (
-  <FiDownload size={17} style={{ marginLeft: 'auto', color: '#000000' }} />
+  <FiDownload size={17} style={{ marginLeft: 'auto', color: '#ffffff' }} />
 )}
   </div>
 ))}          </AIBubble>

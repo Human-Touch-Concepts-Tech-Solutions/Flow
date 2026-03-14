@@ -9,6 +9,8 @@ from email.mime.multipart import MIMEMultipart
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from fastapi import WebSocket
+from typing import Dict
 
 
 
@@ -195,3 +197,30 @@ class SupabaseManager:
 
 # Create a single instance to be used throughout the app
 supabase_manager = SupabaseManager()
+
+
+
+
+
+
+
+# ws Connection for WebSockets
+class ConnectionManager:
+    def __init__(self):
+        # Maps user_id -> WebSocket
+        self.active_connections: Dict[str, WebSocket] = {}
+
+    async def connect(self, user_id: str, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+
+    def disconnect(self, user_id: str):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+
+    async def send_personal_message(self, user_id: str, message: dict):
+        if user_id in self.active_connections:
+            await self.active_connections[user_id].send_json(message)
+
+# Global instance
+manager = ConnectionManager()
