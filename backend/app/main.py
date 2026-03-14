@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
+from app.api.v1.chat import router as chat_router
 
 
 #Local imports 
@@ -13,6 +14,7 @@ from app.core.connection import (
     MistralConnection, 
     EmailConnection,
     OAuthConnection,
+    supabase_manager
 
 
 
@@ -53,6 +55,7 @@ app = FastAPI(
 
 #router setup 
 app.include_router(auth_v1, prefix="/api/v1/auth")
+app.include_router(chat_router, prefix="/api/v1")
 
 
 # CORS middleware
@@ -112,6 +115,12 @@ async def startup_event():
     oauth_manager = OAuthConnection()
     app.state.oauth = oauth_manager.oauth
    
+        #Supabase connection
+    
+    # Initialize the connection
+    supabase_manager.connect()
+    # Store the client in app.state for global access
+    app.state.supabase = supabase_manager.client
 
 @app.on_event("shutdown")
 async def shutdown_event():

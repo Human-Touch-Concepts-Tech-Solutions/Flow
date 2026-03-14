@@ -8,6 +8,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 
 
@@ -173,3 +174,24 @@ class OAuthConnection:
                 "scope": "openid email profile"
             }
         )
+
+
+
+
+
+# Connection for Supabase (PostgreSQL + Auth)
+class SupabaseManager:
+    def __init__(self):
+        # We use the service_role key to ensure full backend access
+        self.url = os.getenv("SUPABASE_URL")
+        self.key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        self.client: Client = None
+
+    def connect(self):
+        if not self.url or not self.key:
+            raise ValueError("Supabase credentials are not set!")
+        self.client = create_client(self.url, self.key)
+        print("Supabase connection established.")
+
+# Create a single instance to be used throughout the app
+supabase_manager = SupabaseManager()
