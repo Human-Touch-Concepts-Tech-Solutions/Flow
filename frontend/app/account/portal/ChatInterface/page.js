@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Navigation from "@/components/Navigation/Navigation";
 import Footer from "@/components/Footer/Footer";
 import UserInput from "@/components/UserInput/UserInput";
@@ -11,6 +11,9 @@ import { authenticatedFetch , getSecureSocket} from "@/lib/api";
 export default function ChatInterface() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  // Use effect logic for WebSocket connection and notifications
+  const wsRef = useRef(null);
+  const [notification, setNotification] = useState(null);
 
 
   
@@ -59,50 +62,87 @@ const handleSendMessage = async (text, files = []) => {
 };
 
 
-const [notification, setNotification] = useState(null);
 
- useEffect(() => {
-    let ws = getSecureSocket("/ws/notifications");
-    if (!ws) return;
+
+useEffect(() => {
+    // 1. Prevent duplicate connections if already connected or connecting
+    if (wsRef.current !== null) return; 
+
+    console.log("WebSocket: Attempting to connect...");
+    const ws = getSecureSocket("/ws/notifications");
+    
+    if (!ws) {
+      console.error("WebSocket: getSecureSocket returned null!");
+      return;
+    }
+
+    wsRef.current = ws; // Store the instance in the ref
+
+    ws.onopen = () => {
+      console.log("WebSocket: Connection established!");
+      ws.send(JSON.stringify({ type: 'PING' }));
+    };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "popup") {
-        setNotification(data);
+      try {
+        const data = JSON.parse(event.data);
+        switch (data.type) {
+          case "popup":
+            setNotification(data);
+            break;
+          case "PONG":
+            console.log("WebSocket: PONG received");
+            break;
+          default:
+            console.log("WebSocket: Received", data.type);
+        }
+      } catch (err) {
+        console.error("WebSocket: Parse error", err);
       }
     };
 
-    ws.onclose = () => {
-      console.log("Socket closed. Not reloading page, just logging.");
-      // REMOVE: window.location.reload(); 
+    ws.onerror = (error) => {
+  // Check readyState: if it's closing or closed, ignore the error
+  if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+    return;
+  }
+  console.error("WebSocket: Actual connection error:", error);
+};
+
+    ws.onclose = (event) => {
+      console.log(`WebSocket: Closed. Code: ${event.code}`);
+      wsRef.current = null; // Important: Clear ref so it can reconnect if needed
     };
 
-    const pingInterval = setInterval(() => {
+    // Keep alive
+    const ping = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'PING' }));
       }
-    }, 30000); // Send a ping every 30 seconds
-
-    // Remember to clear it!
-    return () => {
-      clearInterval(pingInterval);
-      ws.close();
-    };
+    }, 30000);
 
     return () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
-    };
+  clearInterval(ping);
+  if (wsRef.current) {
+    // Only close if it's actually open
+    if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
+    }
+    wsRef.current = null;
+  }
+};
   }, []);
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+     {/* THE POPUP CONTAINER */}
       <SystemPopup 
         isOpen={!!notification} 
         data={notification} 
         onClose={() => setNotification(null)} 
       />
+
+
+      
       <Navigation />
       <main style={{ flex: 1, overflowY: 'auto' }}>
         <MessageList messages={messages} isLoading={isLoading} />

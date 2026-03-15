@@ -206,21 +206,39 @@ supabase_manager = SupabaseManager()
 
 # ws Connection for WebSockets
 class ConnectionManager:
+
     def __init__(self):
-        # Maps user_id -> WebSocket
         self.active_connections: Dict[str, WebSocket] = {}
 
     async def connect(self, user_id: str, websocket: WebSocket):
-        await websocket.accept()
+        # 1. REMOVE await websocket.accept() from here 
+        # because you already accepted it in the websocket_endpoint.
+        
+        # 2. STORE the connection
         self.active_connections[user_id] = websocket
+        print(f"DEBUG: Registered {user_id}. Total users: {len(self.active_connections)}")
 
     def disconnect(self, user_id: str):
         if user_id in self.active_connections:
             del self.active_connections[user_id]
+            print(f"DEBUG: Unregistered {user_id}")
 
-    async def send_personal_message(self, user_id: str, message: dict):
+    # --- THE MAGIC FUNCTION ---
+    async def push_ui_event(self, user_id: str, event_type: str, content: str, title: str = "System Message"):
+        """
+        The only function you'll ever need to call to trigger UI changes.
+        event_type: "popup", "preview", or "presentation"
+        """
+        payload = {
+            "type": event_type,
+            "title": title,
+            "htmlContent": content
+        }
+        print(f"DEBUG: Trying to send to {user_id}. Available users: {list(self.active_connections.keys())}")
         if user_id in self.active_connections:
-            await self.active_connections[user_id].send_json(message)
+            print(f"DEBUG: Sending {event_type} to {user_id}")
+            await self.active_connections[user_id].send_json(payload)
+        else:
+            print(f"User {user_id} is offline. Event {event_type} dropped.")
 
-# Global instance
 manager = ConnectionManager()

@@ -1,6 +1,7 @@
 "use client";
 import styled, { keyframes } from "styled-components";
 import { FiX } from "react-icons/fi";
+import { useEffect } from "react";
 
 const fadeIn = keyframes`
   from { opacity: 0; }
@@ -81,17 +82,25 @@ const DynamicHtmlArea = styled.div`
 
 export default function SystemPopup({ isOpen, data, onClose }) {
   // If not open or no content, don't show the overlay or the popup
+ useEffect(() => {
+    window.closeSystemPopup = onClose;
+    return () => {
+      delete window.closeSystemPopup;
+    };
+  }, [onClose]);
+
+  // 2. Your render logic
   if (!isOpen || !data || !data.htmlContent) return null;
 
   return (
     /* The Overlay captures all clicks so the chat underneath is "dead" */
-    <ModalOverlay onClick={(e) => e.stopPropagation()}>
+   <ModalOverlay onClick={onClose}> 
+      {/* stopPropagation here keeps the click from closing the modal if you click inside the white box */}
       <NotificationContainer onClick={(e) => e.stopPropagation()}>
         <ContentWrapper>
           <CloseButton onClick={onClose} aria-label="Close notification">
             <FiX size={18} />
           </CloseButton>
-
           <DynamicHtmlArea>
             <div 
               className="backend-html-root"
