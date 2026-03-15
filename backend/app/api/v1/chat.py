@@ -67,7 +67,7 @@ async def handle_chat(
     # Just call this whenever you want to push UI to the user.
     await manager.push_ui_event(
         user_id=current_email,
-        event_type="popup",
+        event_type="preview",
         title="Document Processing",
         content=f"""
             <div style="text-align: center; padding: 10px;">

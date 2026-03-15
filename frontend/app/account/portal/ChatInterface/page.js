@@ -5,16 +5,18 @@ import Footer from "@/components/Footer/Footer";
 import UserInput from "@/components/UserInput/UserInput";
 import MessageList from "@/components/MessageList/MessageList";
 import SystemPopup from "@/components/SystemPopup/SystemPopup";
+import PreviewPanel from "@/components/PreviewPanel/PreviewPanel";
 // Import your authenticated fetch utility
 import { authenticatedFetch , getSecureSocket} from "@/lib/api"; 
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+
   // Use effect logic for WebSocket connection and notifications
   const wsRef = useRef(null);
   const [notification, setNotification] = useState(null);
-
+  const [preview, setPreview] = useState(null);
 
   
 
@@ -90,6 +92,9 @@ useEffect(() => {
           case "popup":
             setNotification(data);
             break;
+          case "preview":
+          setPreview(data); // New state for the preview panel
+          break;
           case "PONG":
             console.log("WebSocket: PONG received");
             break;
@@ -132,23 +137,36 @@ useEffect(() => {
   }
 };
   }, []);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-     {/* THE POPUP CONTAINER */}
+ return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' }}>
+      
+      {/* 1. OVERLAY COMPONENTS (Always fixed/absolute) */}
       <SystemPopup 
         isOpen={!!notification} 
         data={notification} 
         onClose={() => setNotification(null)} 
       />
 
+      {/* 2. THE MAIN WRAPPER (Flex Row) */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        
+        {/* 3. CHAT COLUMN (Takes all available space) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <Navigation />
+          <main style={{ flex: 1, overflowY: 'auto' }}>
+            <MessageList messages={messages} isLoading={isLoading} />
+          </main>
+          <UserInput onSend={handleSendMessage} />
+          <Footer />
+        </div>
 
-      
-      <Navigation />
-      <main style={{ flex: 1, overflowY: 'auto' }}>
-        <MessageList messages={messages} isLoading={isLoading} />
-      </main>
-      <UserInput onSend={handleSendMessage} />
-      <Footer />
+        {/* 4. PREVIEW PANEL (Slides in from the right) */}
+        <PreviewPanel 
+          data={preview} 
+          onClose={() => setPreview(null)} 
+        />
+        
+      </div>
     </div>
   );
 }
