@@ -79,23 +79,21 @@ const DynamicHtmlArea = styled.div`
     }
   }
 `;
-
 export default function SystemPopup({ isOpen, data, onClose }) {
-  // If not open or no content, don't show the overlay or the popup
- useEffect(() => {
+  useEffect(() => {
     window.closeSystemPopup = onClose;
     return () => {
       delete window.closeSystemPopup;
     };
   }, [onClose]);
 
-  // 2. Your render logic
-  if (!isOpen || !data || !data.htmlContent) return null;
+  // FIX: Check for BOTH htmlContent OR content
+  const displayHtml = data?.htmlContent || data?.content;
+
+  if (!isOpen || !data || !displayHtml) return null;
 
   return (
-    /* The Overlay captures all clicks so the chat underneath is "dead" */
-   <ModalOverlay onClick={onClose}> 
-      {/* stopPropagation here keeps the click from closing the modal if you click inside the white box */}
+    <ModalOverlay onClick={onClose}> 
       <NotificationContainer onClick={(e) => e.stopPropagation()}>
         <ContentWrapper>
           <CloseButton onClick={onClose} aria-label="Close notification">
@@ -104,7 +102,7 @@ export default function SystemPopup({ isOpen, data, onClose }) {
           <DynamicHtmlArea>
             <div 
               className="backend-html-root"
-              dangerouslySetInnerHTML={{ __html: data.htmlContent }} 
+              dangerouslySetInnerHTML={{ __html: displayHtml }} 
             />
           </DynamicHtmlArea>
         </ContentWrapper>

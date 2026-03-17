@@ -66,25 +66,19 @@ async def handle_chat(
     # This is the "Easy Activation" you wanted. 
     # Just call this whenever you want to push UI to the user.
     await manager.push_ui_event(
-        user_id=current_email,
-        event_type="preview",
-        title="Document Processing",
-        content=f"""
-            <div style="text-align: center; padding: 10px;">
-                <h3 style="color: #0f172a; margin-bottom: 8px;">Success! ✅</h3>
-                <p style="color: #64748b; font-size: 0.9rem;">
-                    Your message was processed and <b>{len(files_info)}</b> file(s) 
-                    were uploaded successfully.
-                </p>
-                <button 
-    onclick="if(window.closeSystemPopup) window.closeSystemPopup()"
-    style="margin-top: 15px; padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;"
->
-    Got it!
-</button>
+    user_id=current_email,
+    event_type="popup",
+    title="🛡️ Security Protocol",
+    content="""
+        <div style="line-height: 1.5;">
+            <p>Your session is set to expire in <b>15 minutes</b>. Would you like to extend your current environment lease or finalize the current computations?</p>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button onclick="window.closeSystemPopup()" style="flex: 1; padding: 10px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;">Ignore</button>
+                <button onclick="alert('Lease Extended!'); window.closeSystemPopup();" style="flex: 1; padding: 10px; background: #0f172a; color: white; border: none; border-radius: 6px; cursor: pointer;">Extend Lease</button>
             </div>
-        """
-    )
+        </div>
+    """
+)
     
     # 5. Return standard HTTP response for the Chat Interface
     return {
@@ -92,3 +86,63 @@ async def handle_chat(
         "reply": ai_reply,
         "files_received": files_info
     }
+
+
+
+
+
+
+
+
+
+
+
+#  ========== for presentation logic
+
+# await manager.push_ui_event(
+#     user_id=current_email,
+#     event_type="presentation_prompt",
+#     title="📽️ Visual Presentation",
+#     content="""
+#         <div style="text-align: center;">
+#             <p style="margin-bottom:15px;">AI has prepared a dynamic animation for the big screen.</p>
+#             <button onclick="window.initPresentation()" style="background: #6366f1; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%;">
+#                 Open Presentation Tab
+#             </button>
+#         </div>
+#     """,
+#     # This payload contains a simple CSS animation for the tab
+#     payload="""
+#         <div style="background: #0f172a; color: #38bdf8; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif;">
+#             <h1 style="font-size: 4rem; animation: pulse 2s infinite;">LIVE DATA</h1>
+#             <div style="width: 100px; height: 100px; border: 5px solid #38bdf8; border-top: 5px solid white; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+#             <style>
+#                 @keyframes pulse { 0% { opacity: 0.5; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1); } 100% { opacity: 0.5; transform: scale(0.9); } }
+#                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+#             </style>
+#         </div>
+#     """
+# )
+
+
+
+# ======= for preview logic
+# await manager.push_ui_event(
+#     user_id=current_email,
+#     event_type="preview",
+#     title="🔍 Image Analysis",
+#     content="""
+#         <div style="padding: 10px;">
+#             <h3 style="margin-top:0;">Source Image</h3>
+#             <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=500" 
+#                  style="width: 100%; border-radius: 8px; border: 1px solid #e2e8f0;" 
+#                  alt="Satellite View" />
+#             <p style="color: #64748b; font-size: 0.9rem; margin-top: 10px;">
+#                 This image was retrieved based on your query about satellite networking.
+#             </p>
+#         </div>
+#     """
+# )
+
+
+

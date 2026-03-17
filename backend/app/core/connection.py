@@ -224,7 +224,7 @@ class ConnectionManager:
             print(f"DEBUG: Unregistered {user_id}")
 
     # --- THE MAGIC FUNCTION ---
-    async def push_ui_event(self, user_id: str, event_type: str, content: str, title: str = "System Message"):
+    async def push_ui_event(self, user_id: str, event_type: str, content: str, title: str = "System Message", **kwargs):
         """
         The only function you'll ever need to call to trigger UI changes.
         event_type: "popup", "preview", or "presentation"
@@ -232,7 +232,8 @@ class ConnectionManager:
         payload = {
             "type": event_type,
             "title": title,
-            "htmlContent": content
+            "htmlContent": content,
+            **kwargs
         }
         print(f"DEBUG: Trying to send to {user_id}. Available users: {list(self.active_connections.keys())}")
         if user_id in self.active_connections:

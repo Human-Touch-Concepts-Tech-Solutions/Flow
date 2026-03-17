@@ -18,7 +18,45 @@ export default function ChatInterface() {
   const [notification, setNotification] = useState(null);
   const [preview, setPreview] = useState(null);
 
-  
+  // for presentation
+  const presentationWindow = useRef(null);
+  const pendingPresentationData = useRef(null);
+
+
+useEffect(() => {
+    // This listens for the "I am open!" signal from the new tab
+    const handleChildMessage = (event) => {
+        if (event.data.type === "CHILD_READY" && presentationWindow.current) {
+            console.log("Tab is ready, beaming data...");
+            presentationWindow.current.postMessage({
+                type: "UPDATE_PRESENTATION",
+                htmlContent: pendingPresentationData.current
+            }, "*");
+        }
+    };
+
+    window.addEventListener("message", handleChildMessage);
+
+    window.initPresentation = () => {
+        // Close the popup first
+        if (window.closeSystemPopup) window.closeSystemPopup();
+        
+        // Open the tab (This works because it's triggered by the button click)
+        presentationWindow.current = window.open(
+            "/account/portal/presentation",
+            "_blank",
+            "resizable=yes,scrollbars=yes,status=yes"
+        );
+    };
+
+    return () => {
+        window.removeEventListener("message", handleChildMessage);
+        delete window.initPresentation;
+    };
+}, []);
+
+
+
 
   // Inside ChatInterface/page.js
 const handleSendMessage = async (text, files = []) => { 
@@ -67,76 +105,79 @@ const handleSendMessage = async (text, files = []) => {
 
 
 useEffect(() => {
-    // 1. Prevent duplicate connections if already connected or connecting
-    if (wsRef.current !== null) return; 
+  // Use a named function so we can call it recursively for auto-reconnect
+  const connectWS = () => {
+    if (wsRef.current !== null) return;
 
     console.log("WebSocket: Attempting to connect...");
     const ws = getSecureSocket("/ws/notifications");
-    
-    if (!ws) {
-      console.error("WebSocket: getSecureSocket returned null!");
-      return;
-    }
+    if (!ws) return;
 
-    wsRef.current = ws; // Store the instance in the ref
-
-    ws.onopen = () => {
-      console.log("WebSocket: Connection established!");
-      ws.send(JSON.stringify({ type: 'PING' }));
-    };
+    wsRef.current = ws;
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log("Event Received:", data.type);
+
         switch (data.type) {
           case "popup":
             setNotification(data);
             break;
           case "preview":
-          setPreview(data); // New state for the preview panel
-          break;
+            setPreview(data);
+            break;
+          case "presentation_prompt":
+    // 1. Save the big HTML payload for later
+    pendingPresentationData.current = data.payload; 
+    
+    // 2. Show the popup with the button we sent from backend
+    setNotification({
+        title: data.title,
+        htmlContent: data.htmlContent
+    });
+    break;
           case "PONG":
-            console.log("WebSocket: PONG received");
             break;
           default:
-            console.log("WebSocket: Received", data.type);
+            console.log("WebSocket: Unknown type", data.type);
         }
       } catch (err) {
         console.error("WebSocket: Parse error", err);
       }
     };
 
-    ws.onerror = (error) => {
-  // Check readyState: if it's closing or closed, ignore the error
-  if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
-    return;
-  }
-  console.error("WebSocket: Actual connection error:", error);
-};
-
     ws.onclose = (event) => {
-      console.log(`WebSocket: Closed. Code: ${event.code}`);
-      wsRef.current = null; // Important: Clear ref so it can reconnect if needed
+      console.log(`WebSocket: Closed (${event.code}). Reconnecting in 2s...`);
+      wsRef.current = null;
+      // THE FIX: Automatically try to reconnect after 2 seconds
+      setTimeout(connectWS, 2000); 
     };
 
-    // Keep alive
-    const ping = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'PING' }));
+    ws.onerror = (error) => {
+      if (ws.readyState !== WebSocket.CLOSED) {
+        console.error("WebSocket Error:", error);
       }
-    }, 30000);
+    };
+  };
 
-    return () => {
-  clearInterval(ping);
-  if (wsRef.current) {
-    // Only close if it's actually open
-    if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.close();
+  connectWS();
+
+  // Heartbeat to keep Docker from killing the connection
+  const ping = setInterval(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'PING' }));
     }
-    wsRef.current = null;
-  }
-};
-  }, []);
+  }, 20000);
+
+  return () => {
+    clearInterval(ping);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  };
+}, []);
  return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' }}>
       
