@@ -77,4 +77,4 @@ Thumbs.db
 # ==============================
 # Datasets / Exports
 # ==============================
-.active_sessions/
+backend/active_sessions/
