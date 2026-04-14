@@ -56,11 +56,11 @@ async def handle_chat(
 
     # 3. Perform AI Generation
     try:
-        result = await ai_service.generate_response(message)
-        ai_reply = result.get("response", "No response content received.")
+        # The new MistralConnection returns the direct string, not a dictionary
+        ai_reply = await ai_service.generate_response(message)
     except Exception as e:
         print(f"AI error: {e}")
-        ai_reply = "I'm sorry, I encountered an error processing that."
+        ai_reply = "I'm sorry, I encountered an error processing that with the Cloud API."
 
     # 4. Trigger the Real-Time Popup
     # This is the "Easy Activation" you wanted. 

@@ -56,8 +56,8 @@ export default function LoginPage() {
         // 1. Check if they are an admin
         if (result.role === "admin") {
            document.cookie = `user_role=admin; path=/; max-age=86400; SameSite=Strict`;
-            router.push("/account/portal/admin/ChatInterface");
-            return;
+           localStorage.setItem("chat_session_id", result.session_id);
+           router.push(`/account/portal/admin/ChatInterface/${result.session_id}`);
         }
 
         // 2. Handle specific "upgrade" intent for regular users
@@ -74,7 +74,9 @@ export default function LoginPage() {
         }
 
         // 3. Default: Regular User Chat
-        router.push("/account/portal/ChatInterface");
+        localStorage.setItem("chat_session_id", result.session_id);
+        console.log("DEBUG LOGIN RESULT:", result);
+        router.push(`/account/portal/ChatInterface/${result.session_id}`);
 
     } catch (err) {
         if (err.message === "VERIFY_REQUIRED") {

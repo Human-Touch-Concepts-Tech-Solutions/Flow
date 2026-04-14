@@ -27,7 +27,7 @@ const getVersionedUrl = (endpoint) => {
 
 export const authenticatedFetch = async (endpoint, options = {}) => {
   let token = typeof window !== 'undefined' ? localStorage.getItem("access_token") : null;
-  
+  let sessionId = typeof window !== 'undefined' ? localStorage.getItem("chat_session_id") : null;
   if (!token) {
     if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
       window.location.href = "/account/login";
@@ -38,6 +38,7 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
   const fullUrl = getVersionedUrl(endpoint);
   const headers = {
     "Authorization": `Bearer ${token}`,
+    "X-Session-ID": sessionId,
     "ngrok-skip-browser-warning": "69420",
     ...options.headers,
   };
@@ -141,22 +142,25 @@ export const publicFetch = async (endpoint, options = {}) => {
 /**
  * Secure WebSocket: Reuses the same versioning logic as HTTP.
  */
-export const getSecureSocket = (endpoint) => {
+// lib/api.js
+
+export const getSecureSocket = (endpoint, passedSessionId = null) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem("access_token") : null;
   
+  // Use the passed ID first, fallback to localStorage
+  const sessionId = passedSessionId || (typeof window !== 'undefined' ? localStorage.getItem("chat_session_id") : null);
+
   if (!token) {
-    console.error("WebSocket failed: No access token found.");
+  
     return null;
   }
 
-  // Generate the versioned HTTP URL and convert to WS
   const httpUrl = getVersionedUrl(endpoint);
-  
-  // Converts http://... to ws://... and https://... to wss://...
   const wsUrl = httpUrl.replace(/^http/, "ws");
   
-  // Append token as query param for the FastAPI handshake
-  const finalUrl = `${wsUrl}?token=${token}`;
+  // Clean the sessionId to avoid sending the string "null" or "undefined"
+  const sessionQuery = sessionId ? `&session_id=${sessionId}` : "";
+  const finalUrl = `${wsUrl}?token=${token}${sessionQuery}`;
 
   return new WebSocket(finalUrl);
 };

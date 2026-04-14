@@ -42,8 +42,9 @@ export default function AdminVerify() {
       if (res.ok) {
         localStorage.setItem("access_token", data.access_token);
         localStorage.setItem("refresh_token", data.refresh_token);
+        localStorage.setItem("chat_session_id", data.session_id);
         localStorage.removeItem("pending_email");
-        router.push("/account/portal/admin/ChatInterface");
+        router.push(`/account/portal/admin/ChatInterface/${data.session_id}`);
       } else {
         setError(data.detail || "Invalid Master Key");
       }

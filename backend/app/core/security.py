@@ -2,11 +2,18 @@ from passlib.context import CryptContext
 import random
 from jose import JWTError, jwt
 import os
+import uuid
+import json
+import asyncio
+from pathlib import Path
 from datetime import datetime, timedelta
 from fastapi import HTTPException,status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 
+
+# sessions  Directory
+SESSIONS_DIR = Path("active_sessions")
 # Password hashing configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 BCRYPT_MAX_BYTES = 72
@@ -153,3 +160,72 @@ class TokenSecurity:
             return payload.get("sub")
         except JWTError:
             return None
+
+
+
+
+# session management for tracking active user sessions (optional, can be used for logout or session invalidation)
+class SessionManager:
+    # Dictionary to store locks for each user to prevent file corruption
+    _locks = {}
+
+    @classmethod
+    async def _get_lock(cls, user_email: str):
+        """Returns a locking mechanism unique to the user."""
+        if user_email not in cls._locks:
+            cls._locks[user_email] = asyncio.Lock()
+        return cls._locks[user_email]
+
+    @staticmethod
+    def _get_user_path(user_email: str) -> Path:
+        """Sanitizes email to create a safe directory path."""
+        safe_email = user_email.replace("@", "_").replace(".", "_")
+        path = SESSIONS_DIR / safe_email
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @classmethod
+    async def check_active_session(cls, user_email: str):
+        """
+        Scans the user's directory for a session file created within 24 hours.
+        Returns the session_id if valid, otherwise None.
+        """
+        user_path = cls._get_user_path(user_email)
+        
+        async with await cls._get_lock(user_email):
+            for file in user_path.glob("*.json"):
+                try:
+                    with open(file, 'r') as f:
+                        data = json.load(f)
+                        created_at = datetime.fromisoformat(data.get("created_at"))
+                        
+                        # Check if the file is less than 24 hours old
+                        if datetime.now() - created_at < timedelta(hours=24):
+                            return data.get("session_id")
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue # Skip malformed files
+        return None
+
+    @classmethod
+    async def create_session(cls, user_email: str):
+        """
+        Creates a new session ID and initializes the JSON buffer file.
+        Returns the new session_id.
+        """
+        user_path = cls._get_user_path(user_email)
+        session_id = f"sess_{uuid.uuid4().hex[:12]}"
+        file_path = user_path / f"{session_id}.json"
+        
+        session_data = {
+            "session_id": session_id,
+            "user_email": user_email,
+            "created_at": datetime.now().isoformat(),
+            "last_interaction": datetime.now().isoformat(),
+            "history": []
+        }
+
+        async with await cls._get_lock(user_email):
+            with open(file_path, 'w') as f:
+                json.dump(session_data, f, indent=4)
+        
+        return session_id

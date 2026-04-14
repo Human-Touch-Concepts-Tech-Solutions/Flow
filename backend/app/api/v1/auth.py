@@ -16,7 +16,7 @@ from app.core.schemas import(
      VerifyResetOTPRequest,
      ResetPasswordFinalRequest)
 from app.core.database import DatabaseProcess
-from app.core.security import PasswordSecurity, OneTimeAuth, TokenSecurity
+from app.core.security import PasswordSecurity, OneTimeAuth, TokenSecurity, SessionManager
 
 
 router = APIRouter(tags=["Auth"])
@@ -118,11 +118,17 @@ async def verify_otp(body: VerifyOtpRequest, request: Request):
 
     # TokenSecurity.create_tokens now includes the 'is_admin' claim
     access, refresh = TokenSecurity.create_tokens(body.email)
+    # chat session logic
+    session_id = await SessionManager.check_active_session(body.email)
+    if not session_id:
+        session_id = await SessionManager.create_session(body.email)
+
     await db.store_refresh_token(body.email, refresh)
     
     return {
         "access_token": access,
         "refresh_token": refresh,
+        "session_id": session_id,
         "is_admin": is_admin,
         "token_type": "bearer"
     }
@@ -165,6 +171,14 @@ async def login(
     # This returns a tuple: (access, refresh)
     access_token, refresh_token = TokenSecurity.create_tokens(body.email)
 
+    # chat session logic
+    session_id = await SessionManager.check_active_session(body.email)
+    
+    if not session_id:
+        session_id = await SessionManager.create_session(body.email)
+       
+        
+
     # 5. Store refresh token in DB
     await db.store_refresh_token(body.email, refresh_token)
     
@@ -172,6 +186,7 @@ async def login(
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "session_id": session_id,
         "token_type": "bearer",
         "role": user.get("role", "user") # This can help frontend distinguish Admin vs User
     }
@@ -313,13 +328,18 @@ async def google_callback(request: Request):
     # Generate tokens using our standard security class
     access_token, refresh_token = TokenSecurity.create_tokens(email)
 
+    # chat session logic 
+    session_id = await SessionManager.check_active_session(email)
+    if not session_id:
+        session_id = await SessionManager.create_session(email)
+
     # Store refresh token in DB
     
     await db.store_refresh_token(email, refresh_token)
     # Redirect to frontend with tokens
     frontend_redirect = os.getenv("FRONTEND_OAUTH_REDIRECT")
     return RedirectResponse(
-        url=f"{frontend_redirect}?access_token={access_token}&refresh_token={refresh_token}"
+        url=f"{frontend_redirect}?access_token={access_token}&refresh_token={refresh_token}&session_id={session_id}"
     )
 
 

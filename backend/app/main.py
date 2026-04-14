@@ -87,6 +87,11 @@ app.add_middleware(
 # Lifecycle events
 @app.on_event("startup")
 async def startup_event():
+
+    # session dir 
+    os.makedirs("active_sessions", exist_ok=True)
+
+    #logger info
     logger.info("Starting up Flowtru Assistant API...")
     # Initialize database connections, load models, etc. here  
     pass
@@ -94,9 +99,8 @@ async def startup_event():
     #Mistral connection test
     ai_ready = await ai_conn.check_ai_health()
     if not ai_ready:
-        logger.warning("⚠️ Mistral/Ollama is not responding. AI features will be disabled.")
-        return False
-    app.state.ai = ai_conn # Attach to state for use in routes
+        logger.warning("⚠️ Mistral Cloud API is not responding. AI features may fail.")
+    app.state.ai = ai_conn
 
     # Mongo DB service connection
     await mongo.open_connection()

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import {useParams, useRouter} from "next/navigation";
 import Navigation from "@/components/Navigation/Navigation";
 import Footer from "@/components/Footer/Footer";
 import UserInput from "@/components/UserInput/UserInput";
@@ -22,6 +23,10 @@ export default function ChatInterface() {
   const presentationWindow = useRef(null);
   const pendingPresentationData = useRef(null);
 
+  // for seesion management
+  const params = useParams();
+  const router = useRouter();
+  const sessionId = params.sessionId;
 
 useEffect(() => {
     // This listens for the "I am open!" signal from the new tab
@@ -105,12 +110,26 @@ const handleSendMessage = async (text, files = []) => {
 
 
 useEffect(() => {
-  // Use a named function so we can call it recursively for auto-reconnect
+  // 
+  if (!sessionId) {
+            const savedId = localStorage.getItem('chat_session_id');
+            if (savedId) {
+                router.replace(`/account/portal/ChatInterface/${savedId}`);
+            }
+            return;
+        }
+  
+  // localStorage for api.js to find
+  console.log("DEBUG: Found Session ID in URL:", sessionId);
+  localStorage.setItem('chat_session_id', sessionId);
+  
   const connectWS = () => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return; // Exit silently if we are logging out
+
     if (wsRef.current !== null) return;
 
-    console.log("WebSocket: Attempting to connect...");
-    const ws = getSecureSocket("/ws/notifications");
+    const ws = getSecureSocket("/ws/notifications", sessionId);
     if (!ws) return;
 
     wsRef.current = ws;
@@ -177,7 +196,7 @@ useEffect(() => {
       wsRef.current = null;
     }
   };
-}, []);
+}, [sessionId]);
  return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' }}>
       

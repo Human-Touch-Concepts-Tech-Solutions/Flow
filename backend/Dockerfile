@@ -6,6 +6,8 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY . .
+
 # Do NOT copy code here for development
 # Code will come from volume
 

@@ -86,7 +86,8 @@ class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str  
     token_type: str = "bearer"
-    role: str           
+    role: str
+    session_id: str           
 
 
 # Schema for token refresh requests, containing the refresh token that users provide to obtain new access tokens. This schema is essential for implementing secure token rotation and management in the authentication flow.

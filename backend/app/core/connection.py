@@ -4,6 +4,7 @@ import os
 import logging
 import httpx
 import smtplib
+import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from authlib.integrations.starlette_client import OAuth
@@ -65,37 +66,65 @@ class MongoConnection:
 # Connection instance for Mistral 7b 
 
 class MistralConnection:
-    def __init__(self, base_url: str = INTELLIGENCE_API_URL):
-        self.base_url = base_url
+    def __init__(self):
+        self.api_key = os.getenv("MISTRAL_API_KEY")
+        self.base_url = "https://api.mistral.ai/v1"
+        self.model = os.getenv("MISTRAL_MODEL", "open-mistral-7b")
  
 
     async def check_ai_health(self):
-        """Verify Ollama is awake and has Mistral loaded"""
-        try:
-            async with httpx.AsyncClient() as client:
-                # Ollama health check endpoint
-                response = await client.get(f"{self.base_url}/api/tags")
-                if response.status_code == 200:
-                    logger.info("🤖 AI Service (Ollama) is reachable")
-                    return True
+            """Verify the API Key is valid and Mistral is reachable"""
+            if not self.api_key:
+                logger.error("❌ MISTRAL_API_KEY is missing from .env")
                 return False
-        except Exception as e:
-            logger.error(f"❌ Cannot connect to AI Service: {e}")
-            return False
+                
+            try:
+                async with httpx.AsyncClient() as client:
+                    headers = {"Authorization": f"Bearer {self.api_key}"}
+                    # We check the models list to verify connectivity
+                    response = await client.get(f"{self.base_url}/models", headers=headers)
+                    if response.status_code == 200:
+                        logger.info("🤖 Mistral Cloud API is reachable")
+                        return True
+                    else:
+                        logger.error(f"❌ Mistral API Error: {response.status_code}")
+                        return False
+            except Exception as e:
+                logger.error(f"❌ Connection to Mistral failed: {e}")
+                return False
 
-    async def generate_response(self, prompt: str, model: str = "mistral"):
-        """Send a prompt to Mistral"""
+    async def generate_response(self, user_message: str):
+        """Send a prompt to the cloud Mistral API"""
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False
-                },
-                timeout=120.0 # AI takes time to think
-            )
-            return response.json()
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"  # Fixed syntax here
+            }
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": user_message}
+                ],
+                "temperature": 0.7  # Optional: makes responses more creative
+            }
+            
+            try:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return result['choices'][0]['message']['content']
+                else:
+                    logger.error(f"Mistral Error {response.status_code}: {response.text}")
+                    return "I'm having trouble processing that right now."
+            except Exception as e:
+                logger.error(f"API Request failed: {e}")
+                return "Connection lost to the AI service."
         
 
 

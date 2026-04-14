@@ -52,7 +52,12 @@ export default function Navigation() {
     } finally {
       localStorage.removeItem("access_token");
       localStorage.removeItem("refresh_token");
+      localStorage.removeItem("chat_session_id");
+      
+
+
       router.push("/account/login");
+     
     }
   };
 
