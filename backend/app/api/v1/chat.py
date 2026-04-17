@@ -2,6 +2,7 @@ import uuid
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, HTTPException
 from app.core.security import TokenSecurity
+from app.agent.run import run_agent
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -17,7 +18,7 @@ async def handle_chat(
     ai_service = request.app.state.ai
     supabase = request.app.state.supabase
     manager = request.app.state.connection_manager 
-    
+    db_manager = request.app.state.db_process
     files_info = []
 
     # 2. Handle File Uploads
@@ -55,12 +56,14 @@ async def handle_chat(
                 raise HTTPException(status_code=500, detail=f"Upload failed for {file.filename}")
 
     # 3. Perform AI Generation
-    try:
-        # The new MistralConnection returns the direct string, not a dictionary
-        ai_reply = await ai_service.generate_response(message)
-    except Exception as e:
-        print(f"AI error: {e}")
-        ai_reply = "I'm sorry, I encountered an error processing that with the Cloud API."
+    agent_response = await run_agent(
+        email=current_email,
+        # session_id=session_id,
+        text=message,
+        ai_service=ai_service,
+        db=db_manager.db,
+        files=files_info
+    )
 
     # 4. Trigger the Real-Time Popup
     # This is the "Easy Activation" you wanted. 
@@ -79,13 +82,10 @@ async def handle_chat(
         </div>
     """
 )
-    
+    if not agent_response:
+        return {"status": "error", "reply": "Agent failed to respond."}
     # 5. Return standard HTTP response for the Chat Interface
-    return {
-        "status": "success",
-        "reply": ai_reply,
-        "files_received": files_info
-    }
+    return agent_response
 
 
 

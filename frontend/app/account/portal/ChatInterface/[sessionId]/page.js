@@ -64,10 +64,15 @@ useEffect(() => {
 
 
   // Inside ChatInterface/page.js
-const handleSendMessage = async (text, files = []) => { 
-  // Safety check: ensure 'files' is always an array
-  const safeFiles = Array.isArray(files) ? files : [files].filter(Boolean);
+const handleSendMessage = async (text, files = []) => {
+  // 1. INTERNET CHECK
+  if (!window.navigator.onLine) {
+    // We throw an alert or set a temporary state
+    alert("No internet connection detected. Please check your network and try again.");
+    return { error: "OFFLINE" }; // Return a signal to UserInput
+  }
 
+  const safeFiles = Array.isArray(files) ? files : [files].filter(Boolean);
   const userMsg = { 
     role: "user", 
     text, 
@@ -80,11 +85,7 @@ const handleSendMessage = async (text, files = []) => {
   try {
     const formData = new FormData();
     if (text) formData.append("message", text);
-    
-    // Send using the array
-    safeFiles.forEach((file) => {
-      formData.append("files", file);
-    });
+    safeFiles.forEach((file) => formData.append("files", file));
 
     const data = await authenticatedFetch("/chat/", {
       method: "POST",
@@ -96,11 +97,13 @@ const handleSendMessage = async (text, files = []) => {
       { 
         role: "ai", 
         text: data.reply,
-        files: data.files_received || [] // Default to empty array
+        files: data.files_received || []
       }
     ]);
+    return { success: true };
   } catch (error) {
     setMessages((prev) => [...prev, { role: "system", text: `Error: ${error.message}` }]);
+    return { error: "FAILED" };
   } finally {
     setIsLoading(false);
   }

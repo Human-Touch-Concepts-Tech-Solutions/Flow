@@ -58,16 +58,30 @@ export default function UserInput({ onSend }) {  // ← add this prop
 const handleSendMessage = async () => {
   if (sending || (!message.trim() && files.length === 0)) return;
 
-  const currentMessage = message;
-  const currentFiles = [...files]; // This is definitely an array
+  // Check offline status before even trying to send
+  if (!navigator.onLine) {
+    setNotice("Internet connection is lost.");
+    setTimeout(() => setNotice(""), 3000);
+    return;
+  }
 
-  setMessage("");
-  setFiles([]);
+  const currentMessage = message;
+  const currentFiles = [...files];
+
   setSending(true);
 
   try {
-    // Pass the ARRAY, not files[0]
-    await onSend(currentMessage, currentFiles); 
+    const result = await onSend(currentMessage, currentFiles);
+    
+    // ONLY clear input if the send was successful
+    if (result && !result.error) {
+      setMessage("");
+      setFiles([]);
+    } else if (result && result.error === "OFFLINE") {
+        // Keep the text so the user can try again!
+        setNotice("Network error: Message not sent.");
+        setTimeout(() => setNotice(""), 4000);
+    }
   } finally {
     setSending(false); 
   }
