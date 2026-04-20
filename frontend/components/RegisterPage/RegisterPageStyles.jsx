@@ -1,4 +1,6 @@
 import styled from "styled-components";
+// Import base styles for the phone library
+import 'react-phone-number-input/style.css'
 
 export const Background = styled.div`
   height: 100vh;
@@ -30,7 +32,7 @@ export const Logo = styled.img`
 export const StepIndicator = styled.p`
   text-align: center;
   font-size: 13px;
-  color: var(--grey);
+  color: #64748b;
   margin-bottom: 15px;
 `;
 
@@ -46,18 +48,46 @@ export const Input = styled.input`
   border-radius: 10px;
   font-size: 14px;
   transition: all 0.2s ease-in-out;
-  
-  /* FIXED BORDER LOGIC */
   border: 1px solid ${({ $valid }) => {
-    if ($valid === true) return "#22c55e"; // Success Green
-    if ($valid === false) return "#ef4444"; // Error Red
-    return "#e2e8f0"; // Default neutral grey
+    if ($valid === true) return "#22c55e";
+    if ($valid === false) return "#ef4444";
+    return "#e2e8f0";
   }};
 
   &:focus {
     outline: none;
     border-color: #2f496e;
     box-shadow: 0 0 0 2px rgba(47, 73, 110, 0.1);
+  }
+`;
+
+// Wrapper to make the Phone Library match your UI
+export const PhoneInputWrapper = styled.div`
+  margin-bottom: 15px;
+  .PhoneInput {
+    display: flex;
+    align-items: center;
+    padding: 2px 16px;
+    border-radius: 10px;
+    background: white;
+    border: 1px solid ${({ $valid }) => {
+      if ($valid === true) return "#22c55e";
+      if ($valid === false) return "#ef4444";
+      return "#e2e8f0";
+    }};
+  }
+
+  .PhoneInputInput {
+    flex: 1;
+    border: none;
+    padding: 10px;
+    font-size: 14px;
+    outline: none;
+    background: transparent;
+  }
+
+  .PhoneInputCountry {
+    margin-right: 10px;
   }
 `;
 
@@ -112,7 +142,7 @@ export const PasswordHintList = styled.ul`
 `;
 
 export const PasswordHintItem = styled.li`
-  color: ${({ $valid }) => ($valid ? "#16a34a" : "#94a3b8")}; /* Green if valid, grey if not */
+  color: ${({ $valid }) => ($valid ? "#16a34a" : "#94a3b8")};
   font-weight: ${({ $valid }) => ($valid ? "600" : "400")};
   display: flex;
   align-items: center;
@@ -130,7 +160,7 @@ export const SuggestionBox = styled.div`
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 10;
-  top: 45px; /* Position below input */
+  top: 45px;
   border: 1px solid #e2e8f0;
 `;
 

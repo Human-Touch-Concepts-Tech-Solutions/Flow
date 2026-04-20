@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, HTTPException
-from app.core.security import TokenSecurity
+from app.core.security import TokenSecurity, SessionManager
 from app.agent.run import run_agent
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -20,6 +20,18 @@ async def handle_chat(
     manager = request.app.state.connection_manager 
     db_manager = request.app.state.db_process
     files_info = []
+    
+    # user infos from browser 
+    env_context = {
+        "timezone": request.headers.get("X-Timezone", "UTC"),
+        "client_time": request.headers.get("X-Client-Time"),
+        "resolution": request.headers.get("X-Resolution"),
+        "platform": request.headers.get("X-Platform"),
+        "viewport": request.headers.get("X-Viewport"),
+        "is_touch": request.headers.get("X-Touch-Device"),
+        "user_agent": request.headers.get("User-Agent"),
+        "ip_address": request.client.host
+    }
 
     # 2. Handle File Uploads
     if files:
@@ -55,6 +67,15 @@ async def handle_chat(
                 print(f"Upload error: {e}")
                 raise HTTPException(status_code=500, detail=f"Upload failed for {file.filename}")
 
+     # data satisfies the agent's expected input format, including the new 'files' and 'env_context' fields.
+    data_state = request.app.state.data_state
+    pending_logs = await data_state.consume_logs(current_email)
+
+    # session logics
+    session_id = await SessionManager.check_active_session(current_email)
+    if not session_id:
+        session_id = await SessionManager.create_session(current_email)
+
     # 3. Perform AI Generation
     agent_response = await run_agent(
         email=current_email,
@@ -62,7 +83,11 @@ async def handle_chat(
         text=message,
         ai_service=ai_service,
         db=db_manager.db,
-        files=files_info
+        files=files_info,
+        env_context=env_context,
+        pending_logs=pending_logs,
+        session_id=session_id
+       
     )
 
     # 4. Trigger the Real-Time Popup

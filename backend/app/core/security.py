@@ -6,7 +6,7 @@ import uuid
 import json
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException,status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
@@ -193,17 +193,21 @@ class SessionManager:
         user_path = cls._get_user_path(user_email)
         
         async with await cls._get_lock(user_email):
+            now_utc = datetime.now(timezone.utc)
             for file in user_path.glob("*.json"):
                 try:
                     with open(file, 'r') as f:
                         data = json.load(f)
                         created_at = datetime.fromisoformat(data.get("created_at"))
                         
+                        # Ensure created_at is aware (it should be if saved correctly)
+                        if created_at.tzinfo is None:
+                            created_at = created_at.replace(tzinfo=timezone.utc)
                         # Check if the file is less than 24 hours old
-                        if datetime.now() - created_at < timedelta(hours=24):
+                        if now_utc - created_at < timedelta(hours=24):
                             return data.get("session_id")
                 except (json.JSONDecodeError, KeyError, ValueError):
-                    continue # Skip malformed files
+                    continue 
         return None
 
     @classmethod
@@ -217,12 +221,16 @@ class SessionManager:
         file_path = user_path / f"{session_id}.json"
         
         session_data = {
-            "session_id": session_id,
-            "user_email": user_email,
-            "created_at": datetime.now().isoformat(),
-            "last_interaction": datetime.now().isoformat(),
-            "history": []
+        "session_id": session_id,
+        "initialized": False,  # Agent will see this and trigger DB fetch
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "user_profile": {},    # To be filled by Agent from DB
+        "events": [],          # Combined History + Logs
+        "metadata": {
+            "version": "1.0",
+            "interaction_count": 0
         }
+    }
 
         async with await cls._get_lock(user_email):
             with open(file_path, 'w') as f:

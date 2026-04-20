@@ -1,5 +1,21 @@
 // lib/api.js
 
+// Client details gathering for analytics and debugging
+const getClientMetadata = () => {
+  if (typeof window === 'undefined') return {};
+
+  return {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    client_time: new Date().toISOString(),
+    screen_resolution: `${window.screen.width}x${window.screen.height}`,
+    viewport_size: `${window.innerWidth}x${window.innerHeight}`,
+    device_platform: navigator.platform,
+    user_agent: navigator.userAgent,
+    is_touch_device: 'ontouchstart' in window || navigator.maxTouchPoints > 0
+  };
+};
+
+
 /**
  * Helper: Constructs the full URL including the dynamic API version.
  * If no version is found in localStorage, it defaults to 'v1'.
@@ -35,11 +51,22 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
     return null;
   }
 
+  const metadata = getClientMetadata();
+
   const fullUrl = getVersionedUrl(endpoint);
   const headers = {
     "Authorization": `Bearer ${token}`,
     "X-Session-ID": sessionId,
     "ngrok-skip-browser-warning": "69420",
+    // Client metadata for analytics and debugging
+    "X-Client-Timezone": metadata.timezone,
+    "X-Client-Time": metadata.client_time,
+    "X-Client-Resolution": metadata.screen_resolution,
+    "X-Client-Platform": metadata.device_platform,
+
+    "X-Client-Viewport": metadata.viewport_size,
+    "X-Client-User-Agent": metadata.user_agent,
+    "X-Client-Is-Touch-Device": String(metadata.is_touch_device),
     ...options.headers,
   };
 
@@ -114,12 +141,24 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
  */
 export const publicFetch = async (endpoint, options = {}) => {
   const fullUrl = getVersionedUrl(endpoint);
+  const metadata = getClientMetadata();
 
   try {
     const res = await fetch(fullUrl, {
       ...options,
       headers: {
         "Content-Type": "application/json",
+
+        // Client metadata for analytics and debugging
+    "X-Client-Timezone": metadata.timezone,
+    "X-Client-Time": metadata.client_time,
+    "X-Client-Resolution": metadata.screen_resolution,
+    "X-Client-Platform": metadata.device_platform,
+
+    "X-Client-Viewport": metadata.viewport_size,
+    "X-Client-User-Agent": metadata.user_agent,
+    "X-Client-Is-Touch-Device": String(metadata.is_touch_device),
+
         ...options.headers,
       },
     });
@@ -146,21 +185,26 @@ export const publicFetch = async (endpoint, options = {}) => {
 
 export const getSecureSocket = (endpoint, passedSessionId = null) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem("access_token") : null;
-  
-  // Use the passed ID first, fallback to localStorage
   const sessionId = passedSessionId || (typeof window !== 'undefined' ? localStorage.getItem("chat_session_id") : null);
 
-  if (!token) {
-  
-    return null;
-  }
+  if (!token) return null;
 
+  const metadata = getClientMetadata(); // Uses the helper we created
   const httpUrl = getVersionedUrl(endpoint);
   const wsUrl = httpUrl.replace(/^http/, "ws");
   
-  // Clean the sessionId to avoid sending the string "null" or "undefined"
-  const sessionQuery = sessionId ? `&session_id=${sessionId}` : "";
-  const finalUrl = `${wsUrl}?token=${token}${sessionQuery}`;
+  // Build the Query Parameters
+  const params = new URLSearchParams({
+    token: token,
+    session_id: sessionId || "",
+    tz: metadata.timezone,
+    res: metadata.screen_resolution,
+    plt: metadata.device_platform,
+    ctime: metadata.client_time, // Important for the TimeManager drift check
+    touch: metadata.is_touch_device ? "1" : "0"
+  });
+
+  const finalUrl = `${wsUrl}?${params.toString()}`;
 
   return new WebSocket(finalUrl);
 };

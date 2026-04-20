@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { FiEye, FiEyeOff } from "react-icons/fi";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import {
   Background, Content, Logo, Input, Button, Row,
   StepIndicator, GenderGroup, GenderOption,
   PasswordHintList, PasswordHintItem,
-  SuggestionBox, SuggestionItem,
+  SuggestionBox, SuggestionItem, PhoneInputWrapper
 } from "./RegisterPageStyles";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -50,7 +51,8 @@ export default function RegisterPage() {
 
   // Validation Rules
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const phoneValid = /^[0-9]{7,15}$/.test(form.phone);
+  // Dynamic validation using library
+  const phoneValid = form.phone ? isValidPhoneNumber(form.phone) : false;
 
   const passwordRules = {
     length: form.password.length >= 8,
@@ -80,27 +82,35 @@ export default function RegisterPage() {
     setServerError(null);
     setIsLoading(true);
 
-    // Format phone to international standard
-    const phoneNumber = form.phone.startsWith("0") 
-      ? "+234" + form.phone.slice(1) 
-      : form.phone;
-
     const payload = {
       first_name: form.firstName,
       last_name: form.lastName,
-      email: form.email.toLowerCase(), // Normalize email for backend checks
-      phone: phoneNumber,
+      email: form.email.toLowerCase(),
+      phone: form.phone, // Already includes the + and country code from the library
       date_of_birth: form.dob,
       gender: form.gender.toLowerCase(),
       profession: form.profession,
       password: form.password,
     };
 
+    // Gather Metadata for the Backend TimeManager
+    const metadata = {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      client_time: new Date().toISOString(),
+      resolution: `${window.screen.width}x${window.screen.height}`,
+      platform: navigator.platform
+    };
+
     try {
-      // 1. Register User
       const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Client-Timezone": metadata.timezone,
+          "X-Client-Time": metadata.client_time,
+          "X-Client-Resolution": metadata.resolution,
+          "X-Client-Platform": metadata.platform
+        },
         body: JSON.stringify(payload),
       });
 
@@ -111,7 +121,6 @@ export default function RegisterPage() {
         return;
       }
 
-      // 2. Trigger OTP or Admin Check via backend
       const otpRes = await fetch(`${API_BASE}/api/v1/auth/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -119,17 +128,14 @@ export default function RegisterPage() {
       });
 
       const otpData = await otpRes.json();
-
       if (!otpRes.ok) {
         setServerError("Account created, but failed to initiate verification.");
         setIsLoading(false);
         return;
       }
 
-      // 3. Success - Set email for verification pages
       localStorage.setItem("pending_email", form.email.toLowerCase());
       
-      // 4. NEW REDIRECT LOGIC based on backend response
       if (otpData.next_step === "admin_verify") {
         router.push("/account/admin-verify");
       } else {
@@ -157,7 +163,17 @@ export default function RegisterPage() {
               <Input $valid={touched.lastName ? !!form.lastName : null} placeholder="Last Name" value={form.lastName} onBlur={() => handleBlur("lastName")} onChange={(e) => handleChange("lastName", e.target.value)} />
             </Row>
             <Input $valid={touched.email ? emailRegex.test(form.email) : null} placeholder="Email" type="email" value={form.email} onBlur={() => handleBlur("email")} onChange={(e) => handleChange("email", e.target.value)} />
-            <Input $valid={touched.phone ? phoneValid : null} placeholder="Phone" type="tel" value={form.phone} onBlur={() => handleBlur("phone")} onChange={(e) => handleChange("phone", e.target.value.replace(/\D/g, ""))} />
+            
+            <PhoneInputWrapper $valid={touched.phone ? phoneValid : null}>
+              <PhoneInput
+                placeholder="Phone Number"
+                international
+                defaultCountry="NG" // Optional: defaults to Nigeria, but will auto-detect based on IP
+                value={form.phone}
+                onBlur={() => handleBlur("phone")}
+                onChange={(val) => handleChange("phone", val)}
+              />
+            </PhoneInputWrapper>
             
             <Input 
               type="date" 

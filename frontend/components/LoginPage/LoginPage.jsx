@@ -91,7 +91,16 @@ export default function LoginPage() {
 };
 
   const handleOAuth = (provider) => {
-    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/oauth/${provider}`;
+    const metadata = {
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ct: new Date().toISOString(),
+    res: `${window.screen.width}x${window.screen.height}`,
+    vpt: `${window.innerWidth}x${window.innerHeight}`,
+    plt: navigator.platform,
+    tch: 'ontouchstart' in window || navigator.maxTouchPoints > 0 ? "1" : "0"
+  };
+  const params = new URLSearchParams(metadata).toString();
+    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/auth/oauth/${provider}?${params}`;
   };
 
   return (

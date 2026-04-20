@@ -1,12 +1,16 @@
 # Package imports
 import os
 import logging
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 from app.api.v1.chat import router as chat_router
 from app.api.v1.ws import router as ws_router
+from app.agent.manager.monitor import Monitor
+from app.agent.manager.data import DataState
 
 
 #Local imports 
@@ -30,7 +34,7 @@ from app.core.database import DatabaseProcess
 # Load environment variables from .env file
 load_dotenv()
 INTELLIGENCE_API_URL = os.getenv("MISTRAL_ADDR")
-print(INTELLIGENCE_API_URL)
+# print(INTELLIGENCE_API_URL)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -39,12 +43,71 @@ logger = logging.getLogger(__name__)
 
 
 #Mistral connection instance (AI service)
-ai_conn = MistralConnection()
-mongo = MongoConnection()
+
+
+# state management for agent logs and system persona
+state_registry = DataState()
 
 
 
 
+
+# Lifecycle events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    # seesion file setup
+    os.makedirs("active_sessions", exist_ok=True)
+    #logger  for app startup
+    logger.info("Starting up Flowtru Assistant API...")
+   
+   # LLM and Database  startup
+    ai_conn = MistralConnection()
+    mongo = MongoConnection()
+
+    #LLM  Health Check 
+    ai_ready = await ai_conn.check_ai_health()
+    if not ai_ready:
+        logger.warning("⚠️ Mistral Cloud API is not responding. AI features may fail.")
+    app.state.ai = ai_conn
+
+    # Llm check 
+    await mongo.open_connection()
+    if mongo.db is not None:
+        # Datasate Intialization and Monitor setup
+        app.state.data_state = DataState()
+        app.state.db_process = DatabaseProcess(mongo.db)
+        # Monitor setup to watch for changes in MongoDB and update DataState accordingly
+        app.state.monitor = Monitor(mongo.db, app.state.data_state)
+        await app.state.monitor.start()
+
+        logger.info("✅ DataState and Monitor are synchronized.")
+    else:
+        logger.error("❌ MongoDB Database instance is None!")
+
+    # other connections (Email, OAuth, Supabase) can be initialized here as well
+    #start email connection
+    email_conn = EmailConnection()
+    app.state.otp_service = OneTimeAuth(email_conn)
+
+    #Google oAuth
+    oauth_manager = OAuthConnection()
+    app.state.oauth = oauth_manager.oauth
+   
+    #Supabase connection
+    # Initialize the connection
+    supabase_manager.connect()
+    # Store the client in app.state for global access
+    app.state.supabase = supabase_manager.client
+
+    # websocket manager
+    app.state.connection_manager = manager
+
+    yield  # This is where the application runs
+
+    # 2. CLEANUP ON SHUTDOWN
+    logger.info("Shutting down Flowtru Assistant API...")
+    await mongo.close_connection()
 
 
 # fastAp instance
@@ -52,6 +115,7 @@ app = FastAPI(
     title="Flowtru Assistant API",
     description="API for Flowtru Assistant, a personal assistant that helps you manage your tasks, calendar, and more.",
     version="2.0.0",
+    lifespan=lifespan
 
 )
 
@@ -84,63 +148,6 @@ app.add_middleware(
 
 
 
-# Lifecycle events
-@app.on_event("startup")
-async def startup_event():
-
-    # session dir 
-    os.makedirs("active_sessions", exist_ok=True)
-
-    #logger info
-    logger.info("Starting up Flowtru Assistant API...")
-    # Initialize database connections, load models, etc. here  
-    pass
-
-    #Mistral connection test
-    ai_ready = await ai_conn.check_ai_health()
-    if not ai_ready:
-        logger.warning("⚠️ Mistral Cloud API is not responding. AI features may fail.")
-    app.state.ai = ai_conn
-
-    # Mongo DB service connection
-    await mongo.open_connection()
-    
-    # 2. Create the process instance using the connected DB
-    # IMPORTANT: Make sure mongo.db is not None here!
-    if mongo.db is not None:
-        app.state.db_process = DatabaseProcess(mongo.db)
-        logger.info("✅ DatabaseProcess attached to app.state")
-    else:
-        logger.error("❌ MongoDB Database instance is None!")
-
-
-    #start email connection
-    email_conn = EmailConnection()
-    app.state.otp_service = OneTimeAuth(email_conn)
-
-    #Google oAuth
-    oauth_manager = OAuthConnection()
-    app.state.oauth = oauth_manager.oauth
-   
-        #Supabase connection
-    
-    # Initialize the connection
-    supabase_manager.connect()
-    # Store the client in app.state for global access
-    app.state.supabase = supabase_manager.client
-
-    # websocket manager
-    app.state.connection_manager = manager
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Shutting down Flowtru Assistant API...")
-    # Clean up resources, close database connections, etc. here
-    pass
-
-
-
-
 # Include API routes
 
 @app.get("/")
@@ -168,3 +175,62 @@ async def test_get(param: str = None):
 @app.post("/api/v1/test-post")
 async def test_post(data: dict):
     return {"message": "POST successful", "received": data}
+
+
+@app.get("/api/v1/test/monitor-check/{email}")
+async def check_user_signal_box(email: str):
+    """
+    Test endpoint to see if the Monitor has deposited any logs 
+    for a specific user in the DataState.
+    """
+    # Grab the DataState from app.state
+    state_registry = app.state.data_state
+    
+    # Consume logs (This will pull them out and clear the box)
+    logs = await state_registry.consume_logs(email)
+    
+    if not logs:
+        return {
+            "status": "empty",
+            "message": f"No new updates found for {email}. Try changing something in MongoDB!"
+        }
+    
+    return {
+        "status": "updates_found",
+        "user": email,
+        "log_count": len(logs),
+        "updates": logs
+    }
+
+
+@app.get("/api/v1/debug/state")
+async def inspect_system_state():
+    """
+    Complete view of the Brain: 
+    Shows Identity, Rules, and Detailed User Logs.
+    """
+    state: DataState = app.state.data_state
+    config = await state.get_config()
+    
+    # 1. Prepare detailed view of user logs
+    detailed_registry = {}
+    async with state._lock: # Lock for safety while reading
+        for email, logs in state._registry.items():
+            detailed_registry[email] = {
+                "pending_count": len(logs),
+                "history": logs  # Shows timestamp, event, description, and raw_data
+            }
+    
+    # 2. Return everything in one clean report
+    return {
+        "status": "success",
+        "memory_report": {
+            "system_config": config,  # This brings back your 'identity' and 'app_config'
+            "live_user_updates": detailed_registry,
+            "counts": {
+                "config_categories": list(config.keys()),
+                "users_with_pending_logs": len(detailed_registry)
+            }
+        },
+        "environment": os.getenv("ENV", "development")
+    }

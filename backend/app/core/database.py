@@ -59,6 +59,17 @@ class DatabaseProcess:
             "gender": user_data.get("gender", "Not Specified"),
             "profession": user_data.get("profession", "Other"),
             "hashed_password": hashed_pw,
+            "timezone": user_data.get("timezone", "UTC"),
+            "last_ip": user_data.get("last_ip"),
+            "onboarding_context": {
+            "client_time_at_reg": user_data.get("client_time"),
+            "screen_resolution": user_data.get("screen_resolution"),
+            "viewport_size": user_data.get("viewport_size"),
+            "device_platform": user_data.get("device_platform"),
+            "user_agent": user_data.get("user_agent"),
+            "is_touch": user_data.get("is_touch_device")
+        },
+
             "role": role,
             "access_level": access_level,
             "api_version": api_version,

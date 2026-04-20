@@ -59,10 +59,19 @@ class UserResponse(BaseModel):
     is_active: bool
     is_oauth: bool
     created_at: datetime
+    # --- ADDED: The 7 Handshake Details ---
+    timezone: str = Field(default="UTC")
+    client_time: Optional[str] = None
+    screen_resolution: Optional[str] = None
+    viewport_size: Optional[str] = None
+    device_platform: Optional[str] = None
+    user_agent: Optional[str] = None
+    is_touch_device: Optional[bool] = False
     
 
     class Config:
         from_attributes = True
+        extra = "ignore"
 
 
 

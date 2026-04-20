@@ -1,3 +1,6 @@
+import base64
+import json
+
 from fastapi import APIRouter, status, HTTPException, Request, Depends
 import os
 from datetime import datetime, timedelta
@@ -42,7 +45,22 @@ async def register_user_v1(user: UserCreate, request: Request):
         raise HTTPException(status_code=429, detail="Beta testing registration limit reached")
 
     # 3. Create user (The database_process now handles roles/version)
+    header_tz = request.headers.get("X-Client-Timezone")
+    header_time = request.headers.get("X-Client-Time")
+    header_res = request.headers.get("X-Client-Resolution")
+    header_plt = request.headers.get("X-Client-Platform")
+    header_vpt = request.headers.get("X-Client-Viewport")
+    header_tch = request.headers.get("X-Client-Touch")
+
     user_dict = user.model_dump()
+    user_dict["timezone"] = header_tz or user.timezone or "UTC"
+    user_dict["client_time"] = header_time
+    user_dict["screen_resolution"] = header_res
+    user_dict["device_platform"] = header_plt
+    user_dict["user_agent"] = request.headers.get("User-Agent") # Standard header
+    user_dict["last_ip"] = request.client.host
+    user_dict["viewport_size"] = header_vpt
+    user_dict["is_touch_device"] = header_tch == "true" or header_tch == "1"
     created_user = await db_process.create_user(user_dict, api_version="v1")
 
     return created_user
@@ -283,16 +301,43 @@ async def reset_password(body: ResetPasswordFinalRequest, request: Request):
 
 
 @router.get("/oauth/google")
-async def google_login(request: Request):
+async def google_login(
+    request: Request,
+    tz: str = "UTC",
+    ct: str = None,
+    res: str = None,
+    vpt: str = None,
+    plt: str = None,
+    tch: str = "0"
+    ):
     oauth = request.app.state.oauth
     # Ensure this URI is registered in Google Cloud Console!
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") 
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+    context = {
+        "tz": tz,
+        "ct": ct,
+        "res": res,
+        "vpt": vpt,
+        "plt": plt,
+        "tch": tch
+    }
+
+    state_data = base64.urlsafe_b64encode(json.dumps(context).encode()).decode()
+
+    # Pass the state to Google
+    return await oauth.google.authorize_redirect(request, redirect_uri, state=state_data)
 
 @router.get("/oauth/google/callback")
 async def google_callback(request: Request):
     oauth = request.app.state.oauth
     db = request.app.state.db_process
+    # unpack context from state
+    state_raw = request.query_params.get("state")
+    try:
+        context = json.loads(base64.urlsafe_b64decode(state_raw).decode())
+    except:
+        context = {}
 
     try:
         token = await oauth.google.authorize_access_token(request)
@@ -321,7 +366,17 @@ async def google_callback(request: Request):
             "email": email,
             "auth_type": "google", # Good to track how they signed up
             "is_verified": True,   # Google already verified them
-            "password": None       # Explicitly no password
+            "password": None,       # Explicitly no password
+
+            # Map the context keys to what your db.create_user expects
+            "last_ip": request.client.host,
+            "timezone": context.get("tz"),
+            "client_time": context.get("ct"),
+            "screen_resolution": context.get("res"),
+            "viewport_size": context.get("vpt"),
+            "device_platform": context.get("plt"),
+            "is_touch_device": context.get("tch") == "1",
+            "user_agent": request.headers.get("User-Agent")
         }
         await db.create_user(user_data)
 

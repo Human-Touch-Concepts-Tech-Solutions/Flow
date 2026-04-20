@@ -1,6 +1,8 @@
 import asyncio
+import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from .Accessibility.database import DatabaseAccess
 
 
@@ -9,10 +11,63 @@ from .Accessibility.database import DatabaseAccess
 
 class FlowtruAgent:
     # 1. FIXED: Removed session_id from here so it matches the call below
-    def __init__(self, email: str, ai_service: Any, db_instance: Any):
+    def __init__(
+            self, 
+            email: str, 
+            ai_service: Any, 
+            db_instance: Any, 
+            env_context: Dict,
+            pending_logs: List,
+            session_id: str
+            ):
         self.email = email
         self.ai_service = ai_service
         self.access = DatabaseAccess(db_instance)
+        self.env_context = env_context
+        self.pending_logs = pending_logs
+        self.session_id = session_id
+        safe_email = email.replace("@", "_").replace(".", "_")
+        self.session_file = Path(f"sessions/{safe_email}/{session_id}.json")
+
+    
+    async def _sync_state(self):
+        """Phase 1 & 2: Security check + Deep DB Sync + Log Merging."""
+        # 1. SECURITY CHECK: Does the session file exist?
+        if not self.session_file.exists():
+            raise PermissionError("SESSION_INVALID_OR_EXPIRED")
+
+        # Load current session data
+        with open(self.session_file, 'r') as f:
+            data = json.load(f)
+
+        # 2. FIRST-TIME INITIALIZATION (Deep Fetch)
+        if not data.get("initialized"):
+            print(f"Agent: Performing first-time sync for {self.email}")
+            user_doc = await self.access.get_one("users", {"email": self.email})
+            if user_doc:
+                # Remove sensitive DB fields before saving to session
+                user_doc.pop("_id", None)
+                user_doc.pop("hashed_password", None)
+                data["user_profile"] = user_doc
+            
+            # Here you could also fetch last 5 summaries from a 'summaries' collection
+            data["initialized"] = True
+
+        # 3. MERGE PENDING LOGS (The 'Delta' Update)
+        if self.pending_logs:
+            for log in self.pending_logs:
+                # Add logs to the 'events' list so the AI sees them
+                data["events"].append({
+                    "type": "system_event",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "content": log
+                })
+
+        # Save the updated state back to disk
+        with open(self.session_file, 'w') as f:
+            json.dump(data, f, indent=4)
+        
+        return data
 
     async def _build_prompt_stack(self, user_text: str) -> str:
         """
@@ -83,12 +138,28 @@ class FlowtruAgent:
 
     async def execute(self, text: str, files: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         try:
-            # Gather all instructions into one "Stack"
-            final_prompt = await self._build_prompt_stack(text)
+            # Step 1: Sync and verify (The Logic we just built)
+            session_data = await self._sync_state()
+
+            # Step 2: Build prompt using the session_data instead of raw DB calls
+            final_prompt = await self._build_prompt_stack(text, session_data)
             
-            # Send the fully assembled prompt to the LLM
+            # Step 3: AI Generation
             ai_reply = await self.ai_service.generate_response(final_prompt)
+
+            # Step 4: Record this interaction in the 'events' list
+            session_data["events"].append({
+                "type": "chat",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "user": text,
+                "ai": ai_reply
+            })
             
+            with open(self.session_file, 'w') as f:
+                json.dump(session_data, f, indent=4)
+        except PermissionError:
+            return {"status": "redirect", "url": "/login"}
+        
         except Exception as e:
             print(f"Agent Execution Error: {e}")
             ai_reply = "I'm having trouble assembling my thoughts right now."
@@ -104,10 +175,21 @@ async def run_agent(
     text: str, 
     ai_service: Any,
     db: Any,
-    files: Optional[List[Dict[str, Any]]] = None
+    files: Optional[List[Dict[str, Any]]] = None,
+    env_context: Dict = None,
+    pending_logs: List = None,
+    session_id: str = None
 ) -> Dict[str, Any]:
     # 4. FIXED: Passed exactly what __init__ expects
-    agent = FlowtruAgent(email, ai_service,db_instance=db)
+    agent = FlowtruAgent(
+        email, 
+        ai_service,
+        db, 
+        env_context,
+       pending_logs,
+        session_id
+        
+        )
     
     # 5. Return the result of the execution
     return await agent.execute(text, files)
