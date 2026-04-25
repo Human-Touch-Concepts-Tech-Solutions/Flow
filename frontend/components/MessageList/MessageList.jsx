@@ -131,7 +131,7 @@ export default function MessageList({ messages = [], isLoading = false }) {
     <MessageContainer>
       <MessageListWrapper>
         {messages.map((msg, index) => (
-          <MessageBubble key={index} $isUser={msg.role === "user"}>
+          <MessageBubble key={index}$isUser={msg.role === "user"}>
               {msg.role !== "user" && <Avatar><FiCpu /></Avatar>}
             
             {msg.role === "user" ? (

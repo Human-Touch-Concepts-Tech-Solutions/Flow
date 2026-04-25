@@ -199,7 +199,25 @@ async def login(
 
     # 5. Store refresh token in DB
     await db.store_refresh_token(body.email, refresh_token)
+
+    # monitoring log 
+    client_info ={
+       "timezone": request.headers.get("X-Client-Timezone", "UTC"),
+        "client_time": request.headers.get("X-Client-Time"),
+        "resolution": request.headers.get("X-Client-Resolution"), # Fixed key
+        "platform": request.headers.get("X-Client-Platform"),     # Fixed key
+        "viewport": request.headers.get("X-Client-Viewport"),     # Fixed key
+        "is_touch": request.headers.get("X-Client-Is-Touch-Device"), # Fixed key
+        "user_agent": request.headers.get("User-Agent"),
+        "ip_address": request.client.host
+    }
     
+    await request.app.state.monitor.internal_event_hook(
+        email=body.email,
+        category="authentication",
+        details = client_info,
+        description = "User logged in successfully with email and password"
+    )
 
     return {
         "access_token": access_token,
@@ -426,6 +444,47 @@ async def get_user_info(
 
 
 
+# route for user chats history for that session 
+@router.get("/session/history")
+async def get_session_history(
+    user_email: str = Depends(TokenSecurity.get_current_user)
+):
+    """
+    Retrieves the current 24-hour session's chat history.
+    """
+    # 1. Identify the active session using the email returned by the token
+    session_id = await SessionManager.check_active_session(user_email)
+    
+    if not session_id:
+        return {"history": []}
+
+    # 2. Locate the session file
+    user_path = SessionManager._get_user_path(user_email)
+    file_path = user_path / f"{session_id}.json"
+
+    if not file_path.exists():
+        return {"history": []}
+
+    # 3. Extract and sanitize chat logs
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+            
+        events = data.get("events", [])
+        chat_history = []
+        
+        for event in events:
+            # We only want 'chat' types for the UI
+            if event.get("type") == "chat":
+                # Frontend expects {role, text}
+                chat_history.append({"role": "user", "text": event.get("user")})
+                chat_history.append({"role": "ai", "text": event.get("ai")})
+       
+        return {"history": chat_history}
+    except Exception as e:
+        # Silently fail and return empty history so the UI still loads
+        print(f"DEBUG: Session history error: {e}")
+        return {"history": []}
 
 
 

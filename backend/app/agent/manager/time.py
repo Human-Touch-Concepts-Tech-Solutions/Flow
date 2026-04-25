@@ -1,31 +1,53 @@
 import pytz
 from datetime import datetime, timezone
-from typing import Optional
-
-
-
+from typing import Optional, Any, Dict
 
 class TimeManager:
-    # This class provides utility functions for handling time-related operations, such as converting between timezones and formatting datetime objects. It is designed to help manage time effectively in applications that may need to support users across different timezones.   
     @staticmethod
     def get_user_time(user_timezone: str = "UTC") -> datetime:
-       # calculates the current time in the user's timezone. It takes a timezone string as input and returns a datetime object representing the current time in that timezone. If the provided timezone is invalid, it defaults to UTC.
-        try:
-            tz = pytz.timezone(user_timezone)
-        except Exception:
-            # Fallback to UTC if the timezone string is corrupted or missing
-            tz = pytz.utc
-            
-        return datetime.now(timezone.utc).astimezone(tz)
-    
+        # Using localized time directly from the timezone object is safer
+        tz = pytz.timezone(user_timezone)
+        return datetime.now(tz) # This gets the current time ALREADY in that TZ
 
     @staticmethod
     def format_for_ai(dt: datetime) -> str:
-        # formats a datetime object into a human-readable string format that is suitable for display in AI-generated responses. The format includes the full day of the week, month name, day number, year, and time in 12-hour format with AM/PM. This makes it easier for users to understand the date and time information provided by the AI.
-        # %A = Day, %B = Month, %d = Day number, %Y = Year
-        # %I = Hour (12hr), %M = Minute, %p = AM/PM
         return dt.strftime("%A, %B %d, %Y, at %I:%M %p")
-    
+
+
+
+    @staticmethod
+    def localize_timestamp(utc_val: Any, user_timezone: str) -> str:
+        if not utc_val: return "Unknown Time"
+        try:
+            if isinstance(utc_val, datetime):
+                dt_utc = utc_val
+            else:
+                dt_utc = datetime.fromisoformat(str(utc_val).replace('Z', '+00:00'))
+            
+            if dt_utc.tzinfo is None:
+                dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+
+            tz = pytz.timezone(user_timezone)
+            # Use normalize to handle daylight savings or historical shifts correctly
+            dt_local = dt_utc.astimezone(tz)
+            return TimeManager.format_for_ai(dt_local)
+        except Exception as e:
+            return str(utc_val)
+    @staticmethod
+    def localize_device_time(device_str: str, user_timezone: str) -> str:
+        """Converts browser string 'DD/MM/YYYY, HH:MM:SS' to pretty format."""
+        if not device_str: return "Unknown"
+        try:
+            # Parse the format: 22/04/2026, 23:02:22
+            # Note: This parser is flexible for most common browser locales
+            clean_str = device_str.replace(',', '')
+            dt = datetime.strptime(clean_str, "%d/%m/%Y %H:%M:%S")
+            
+            # Since this comes from the device, we treat it as already localized
+            return TimeManager.format_for_ai(dt)
+        except:
+            return device_str # Fallback to raw if parsing fails
+        
 
     # @staticmethod
     # def get_time_period(dt: datetime) -> str:

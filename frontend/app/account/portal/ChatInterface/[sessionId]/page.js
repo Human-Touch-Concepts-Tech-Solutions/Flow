@@ -200,6 +200,29 @@ useEffect(() => {
     }
   };
 }, [sessionId]);
+
+// useeffect for message history
+useEffect(() => {
+  const loadHistory = async () => {
+    try {
+      // Use your authenticatedFetch to hit the new endpoint
+      const response = await authenticatedFetch("/auth/session/history", {
+        method: "GET"
+      });
+      
+      if (response && response.history) {
+        setMessages(response.history);
+      }
+    } catch (err) {
+      console.error("Failed to load session history:", err);
+    }
+  };
+
+  // Only load if we have a sessionId (meaning user is logged in)
+  if (sessionId) {
+    loadHistory();
+  }
+}, [sessionId]);
  return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' }}>
       

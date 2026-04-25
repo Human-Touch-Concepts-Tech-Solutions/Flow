@@ -23,12 +23,12 @@ async def handle_chat(
     
     # user infos from browser 
     env_context = {
-        "timezone": request.headers.get("X-Timezone", "UTC"),
+        "timezone": request.headers.get("X-Client-Timezone", "UTC"),
         "client_time": request.headers.get("X-Client-Time"),
-        "resolution": request.headers.get("X-Resolution"),
-        "platform": request.headers.get("X-Platform"),
-        "viewport": request.headers.get("X-Viewport"),
-        "is_touch": request.headers.get("X-Touch-Device"),
+        "resolution": request.headers.get("X-Client-Resolution"), # Fixed key
+        "platform": request.headers.get("X-Client-Platform"),     # Fixed key
+        "viewport": request.headers.get("X-Client-Viewport"),     # Fixed key
+        "is_touch": request.headers.get("X-Client-Is-Touch-Device"), # Fixed key
         "user_agent": request.headers.get("User-Agent"),
         "ip_address": request.client.host
     }
@@ -86,27 +86,28 @@ async def handle_chat(
         files=files_info,
         env_context=env_context,
         pending_logs=pending_logs,
-        session_id=session_id
+        session_id=session_id,
+        data_state=data_state
        
     )
 
     # 4. Trigger the Real-Time Popup
     # This is the "Easy Activation" you wanted. 
     # Just call this whenever you want to push UI to the user.
-    await manager.push_ui_event(
-    user_id=current_email,
-    event_type="popup",
-    title="🛡️ Security Protocol",
-    content="""
-        <div style="line-height: 1.5;">
-            <p>Your session is set to expire in <b>15 minutes</b>. Would you like to extend your current environment lease or finalize the current computations?</p>
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button onclick="window.closeSystemPopup()" style="flex: 1; padding: 10px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;">Ignore</button>
-                <button onclick="alert('Lease Extended!'); window.closeSystemPopup();" style="flex: 1; padding: 10px; background: #0f172a; color: white; border: none; border-radius: 6px; cursor: pointer;">Extend Lease</button>
-            </div>
-        </div>
-    """
-)
+#     await manager.push_ui_event(
+#     user_id=current_email,
+#     event_type="popup",
+#     title="🛡️ Security Protocol",
+#     content="""
+#         <div style="line-height: 1.5;">
+#             <p>Your session is set to expire in <b>15 minutes</b>. Would you like to extend your current environment lease or finalize the current computations?</p>
+#             <div style="display: flex; gap: 10px; margin-top: 20px;">
+#                 <button onclick="window.closeSystemPopup()" style="flex: 1; padding: 10px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;">Ignore</button>
+#                 <button onclick="alert('Lease Extended!'); window.closeSystemPopup();" style="flex: 1; padding: 10px; background: #0f172a; color: white; border: none; border-radius: 6px; cursor: pointer;">Extend Lease</button>
+#             </div>
+#         </div>
+#     """
+# )
     if not agent_response:
         return {"status": "error", "reply": "Agent failed to respond."}
     # 5. Return standard HTTP response for the Chat Interface

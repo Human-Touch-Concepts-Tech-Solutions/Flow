@@ -1,12 +1,31 @@
 // lib/api.js
 
+
+const getBrowserName = () => {
+  const ua = navigator.userAgent;
+  if (ua.includes("Firefox")) return "Mozilla Firefox";
+  if (ua.includes("SamsungBrowser")) return "Samsung Internet";
+  if (ua.includes("Opera") || ua.includes("OPR")) return "Opera";
+  if (ua.includes("Trident")) return "Internet Explorer";
+  if (ua.includes("Edge")) return "Microsoft Edge";
+  if (ua.includes("Chrome")) return "Google Chrome";
+  if (ua.includes("Safari")) return "Apple Safari";
+  return "Unknown Browser";
+};
+
+
 // Client details gathering for analytics and debugging
 const getClientMetadata = () => {
   if (typeof window === 'undefined') return {};
 
+  const now = new Date();
+  
   return {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    client_time: new Date().toISOString(),
+    // 1. Capture time EXACTLY as shown on the device clock
+    client_time: now.toLocaleString(), 
+    // 2. Identify the specific browser
+    browser: getBrowserName(),
     screen_resolution: `${window.screen.width}x${window.screen.height}`,
     viewport_size: `${window.innerWidth}x${window.innerHeight}`,
     device_platform: navigator.platform,
@@ -65,7 +84,7 @@ export const authenticatedFetch = async (endpoint, options = {}) => {
     "X-Client-Platform": metadata.device_platform,
 
     "X-Client-Viewport": metadata.viewport_size,
-    "X-Client-User-Agent": metadata.user_agent,
+    "X-Client-Browser": metadata.browser,
     "X-Client-Is-Touch-Device": String(metadata.is_touch_device),
     ...options.headers,
   };
@@ -156,7 +175,7 @@ export const publicFetch = async (endpoint, options = {}) => {
     "X-Client-Platform": metadata.device_platform,
 
     "X-Client-Viewport": metadata.viewport_size,
-    "X-Client-User-Agent": metadata.user_agent,
+    "X-Client-Browser": metadata.browser,
     "X-Client-Is-Touch-Device": String(metadata.is_touch_device),
 
         ...options.headers,
@@ -202,6 +221,7 @@ export const getSecureSocket = (endpoint, passedSessionId = null) => {
     plt: metadata.device_platform,
     ctime: metadata.client_time, // Important for the TimeManager drift check
     touch: metadata.is_touch_device ? "1" : "0"
+    
   });
 
   const finalUrl = `${wsUrl}?${params.toString()}`;
