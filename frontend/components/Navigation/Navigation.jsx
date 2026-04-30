@@ -92,7 +92,7 @@ export default function Navigation() {
 
           <StatusBadge>
             <AiOutlineLoading3Quarters className="spin-icon" />
-            <span>In Production</span>
+            <span>Beta</span>
           </StatusBadge>
 
           

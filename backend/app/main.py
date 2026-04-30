@@ -3,7 +3,7 @@ import os
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
@@ -20,7 +20,8 @@ from app.core.connection import (
     EmailConnection,
     OAuthConnection,
     supabase_manager,
-    manager
+    manager,
+    VectorConnection
 
 
 
@@ -64,6 +65,7 @@ async def lifespan(app: FastAPI):
    # LLM and Database  startup
     ai_conn = MistralConnection()
     mongo = MongoConnection()
+    vector_conn = VectorConnection()
 
     #LLM  Health Check 
     ai_ready = await ai_conn.check_ai_health()
@@ -87,6 +89,9 @@ async def lifespan(app: FastAPI):
 
     # other connections (Email, OAuth, Supabase) can be initialized here as well
     #start email connection
+
+    await vector_conn.connect()
+    vector_conn.attach_to_app(app)
     email_conn = EmailConnection()
     app.state.otp_service = OneTimeAuth(email_conn)
 
@@ -148,7 +153,7 @@ app.add_middleware(
 
 
 
-# Include API routes
+# test routes 
 
 @app.get("/")
 async def health_check():
@@ -234,3 +239,70 @@ async def inspect_system_state():
         },
         "environment": os.getenv("ENV", "development")
     }
+
+
+# vector database test endpoint
+@app.get("/api/v1/debug/vector-test")
+async def test_vector_logic(
+    action: str = Query(..., description="Options: 'embed', 'store', 'search'"),
+    text: str = "This is a test sentence about artificial intelligence"
+):
+    """
+    Playground to test the Vector Engine logic.
+    """
+    engine: VectorConnection = app.state.vector_engine
+    
+    # Check if engine is initialized
+    if not engine or not engine.client:
+        return {"error": "Vector engine not initialized"}
+
+    try:
+        # 1. TEST EMBEDDING ONLY
+        if action == "embed":
+            vector = engine.get_embedding(text)
+            return {
+                "input": text,
+                "vector_sample": vector[:5], # Just show the first 5 dimensions
+                "dimensions": len(vector)
+            }
+
+        # 2. TEST STORAGE (Upsert)
+        elif action == "store":
+            # Get or create a test collection
+            collection = engine.client.get_or_create_collection(name="test_collection")
+            
+            # Generate the vector
+            vector = engine.get_embedding(text)
+            
+            # Add to ChromaDB
+            # We use a static ID for testing
+            collection.upsert(
+                ids=["test_doc_1"],
+                embeddings=[vector],
+                metadatas=[{"source": "debug_route", "timestamp": "now"}],
+                documents=[text]
+            )
+            return {"status": "stored", "id": "test_doc_1", "text": text}
+
+        # 3. TEST SEARCH (The "Magic" part)
+        elif action == "search":
+            collection = engine.client.get_collection(name="test_collection")
+            
+            # Convert query to vector
+            query_vector = engine.get_embedding(text)
+            
+            # Search for the top 1 result
+            results = collection.query(
+                query_embeddings=[query_vector],
+                n_results=1
+            )
+            
+            return {
+                "query": text,
+                "match": results["documents"][0][0] if results["documents"] else "No match",
+                "distance": results["distances"][0][0] if results["distances"] else None,
+                "metadata": results["metadatas"][0][0] if results["metadatas"] else None
+            }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

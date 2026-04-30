@@ -78,3 +78,4 @@ Thumbs.db
 # Datasets / Exports
 # ==============================
 backend/active_sessions/
+chroma_db_files/

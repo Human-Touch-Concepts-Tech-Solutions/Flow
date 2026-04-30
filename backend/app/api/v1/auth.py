@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta
 from fastapi.responses import JSONResponse, RedirectResponse
 from bson import ObjectId
+from typing import Dict, List, Optional, Any
 #local imports 
 from app.core.schemas import(
      UserCreate, 
@@ -489,6 +490,22 @@ async def get_session_history(
 
 
 
+# route for billing 
+@router.post("/billing/checkout/complete")
+async def complete_checkout(
+    payload: Dict, 
+    request: Request,
+    current_user: str = Depends(TokenSecurity.get_current_user) # Note: changed type hint to str
+):
+    db = request.app.state.db_process 
+    
+    # Use current_user directly if it is already the email string
+    success = await db.process_checkout(current_user, payload)
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to update subscription.")
+    
+    return {"status": "success", "message": "Credits added successfully!"}
 
 
 # logging out a user by deleting their refresh token(s) from the database, which effectively invalidates their session and requires them to re-authenticate to obtain new tokens for continued access. This route is protected by the TokenSecurity.get_current_user dependency, ensuring that only authenticated users can log out of their own sessions, and it provides a secure way to manage user sessions and enhance account security.

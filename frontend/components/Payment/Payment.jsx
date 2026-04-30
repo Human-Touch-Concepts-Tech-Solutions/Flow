@@ -3,9 +3,11 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiArrowLeft, FiCheckCircle } from "react-icons/fi";
 import * as S from "./PaymentStyles";
+import { useUser } from "@/providers/UserProvider"; 
 
 export default function Payment() {
   const router = useRouter();
+  const { user, isLoading } = useUser(); 
   const [isYearly, setIsYearly] = useState(false);
   
   const milestones = [100, 1000, 2000, 3000, 5000, 7500, 10000, 10100];
@@ -28,11 +30,8 @@ export default function Payment() {
     if (pkg.type === "Enterprise" || (pkg.max && creditCount > pkg.max)) {
         return pkg.type === "Enterprise" ? "Custom" : "—";
     }
-
     let effectiveCredits = creditCount;
-    if (pkg.type === "Team") {
-      effectiveCredits = Math.max(300, creditCount);
-    }
+    if (pkg.type === "Team") effectiveCredits = Math.max(300, creditCount);
 
     const monthlyPrice = effectiveCredits * 100;
     if (!isYearly) return monthlyPrice.toLocaleString();
@@ -40,68 +39,48 @@ export default function Payment() {
     return Math.round(yearlyTotal).toLocaleString();
   };
 
+  const handleBack = () => {
+    sessionStorage.removeItem("pending_plan");
+    const lastSessionId = localStorage.getItem("chat_session_id");
+    const isAdmin = window.location.pathname.includes("/admin/");
+    
+    let targetPath = lastSessionId 
+      ? `/account/portal${isAdmin ? '/admin' : ''}/ChatInterface/${lastSessionId}`
+      : `/account/portal${isAdmin ? '/admin' : ''}/ChatInterface`;
+    
+    router.push(targetPath);
+  };
+
+  // REMOVED isCurrent logic here
   const handlePlanSelection = (pkg) => {
     if (pkg.type === "Enterprise") {
       router.push("/contact");
       return;
     }
 
-    // Since this is Billing (Logged In), we skip the login redirect
+    // Force 10 credits for Free, otherwise use slider
+    const finalCredits = pkg.type === "Free" ? 10 : credits;
+
     const selection = {
       planType: pkg.type,
-      credits: credits,
+      credits: finalCredits,
       billingCycle: isYearly ? "yearly" : "monthly",
-      totalPrice: calculatePrice(credits, pkg),
+      totalPrice: calculatePrice(finalCredits, pkg),
       timestamp: Date.now() 
     };
 
-    // Store the plan for the checkout page
     sessionStorage.setItem("pending_plan", JSON.stringify(selection));
-    
-    // DIRECT REDIRECT to checkout
-    router.push("/account/checkout");
+    router.push("checkout");
   };
 
   const packages = [
-    {
-      name: "Explorer",
-      type: "Free",
-      desc: "Perfect for testing advanced AI workflows.",
-      features: ["10 Free Credits", "Core platform access", "Standard support"]
-    },
-    {
-      name: "Professional",
-      type: "Professional",
-      desc: "For individual power users.",
-      primary: true,
-      max: 3000, 
-      features: ["Priority processing", "Personal Workspace", "Continuous automation"]
-    },
-    {
-      name: "Business Team",
-      type: "Team",
-      desc: "Collaborative workspace for teams.",
-      max: 10000, 
-      features: ["Shared Credit Pool", "Team Management", "Unlimited task chains"]
-    },
-    {
-      name: "Enterprise",
-      type: "Enterprise",
-      desc: "Custom high-volume infrastructure.",
-      features: ["Unlimited Users", "10,000+ Credits", "24/7 VIP Support", "On-premise option"]
-    }
+    { name: "Explorer", type: "Free", desc: "Perfect for testing advanced AI workflows.", features: ["10 Free Credits", "Core platform access", "Standard support"] },
+    { name: "Professional", type: "Professional", desc: "For individual power users.", primary: true, max: 3000, features: ["Priority processing", "Personal Workspace", "Continuous automation"] },
+    { name: "Business Team", type: "Team", desc: "Collaborative workspace for teams.", max: 10000, features: ["Shared Credit Pool", "Team Management", "Unlimited task chains"] },
+    { name: "Enterprise", type: "Enterprise", desc: "Custom high-volume infrastructure.", features: ["Unlimited Users", "10,000+ Credits", "24/7 VIP Support", "On-premise option"] }
   ];
 
-  // back function 
-  const handleBack = () => {
-  const currentPath = window.location.pathname;
-  
-  if (currentPath.includes("/admin/")) {
-    router.push("/account/portal/admin/ChatInterface");
-  } else {
-    router.push("/account/portal/ChatInterface");
-  }
-};
+  if (isLoading) return null;
 
   return (
     <S.PageContainer>
@@ -114,7 +93,7 @@ export default function Payment() {
         <h1>Manage your subscription</h1>
         <p>Current pricing: ₦100/credit. Credits are added instantly to your account.</p>
       </S.HeaderSection>
-
+      
       <S.ToggleWrapper>
         <S.ToggleLabel $active={!isYearly}>Monthly</S.ToggleLabel>
         <S.Switch $isYearly={isYearly} onClick={() => setIsYearly(!isYearly)} />
@@ -134,26 +113,12 @@ export default function Payment() {
             <span className="unit">Credits / mo</span>
           </div>
         </div>
-        
         <S.SliderBox>
-          <input 
-            type="range" 
-            min="0" 
-            max={milestones.length - 1} 
-            step="0.01"
-            value={sliderVal} 
-            onChange={(e) => setSliderVal(parseFloat(e.target.value))} 
-          />
+          <input type="range" min="0" max={milestones.length - 1} step="0.01" value={sliderVal} onChange={(e) => setSliderVal(parseFloat(e.target.value))} />
           <S.TrackFill $progress={(sliderVal / (milestones.length - 1)) * 100} />
-          
           <S.TicksContainer>
             {milestones.map((m, idx) => (
-              <S.TickMarker 
-                key={m} 
-                $active={idx <= sliderVal} 
-                $left={(idx / (milestones.length - 1)) * 100}
-                $current={Math.round(sliderVal) === idx}
-              >
+              <S.TickMarker key={m} $active={idx <= sliderVal} $left={(idx / (milestones.length - 1)) * 100} $current={Math.round(sliderVal) === idx}>
                 <div className="line" />
                 <span>{m === 10100 ? "10k+" : (m >= 1000 ? `${m/1000}k` : m)}</span>
               </S.TickMarker>
@@ -167,14 +132,22 @@ export default function Payment() {
           const isOverLimit = pkg.max && credits > pkg.max;
           const isEnterpriseState = credits > 10000 && pkg.type === "Enterprise";
           const currentPrice = calculatePrice(credits, pkg);
+          
+          const rawUserPlan = user?.subscription?.plan || "Free";
+          const isCurrentPlan = rawUserPlan.toLowerCase().includes(pkg.type.toLowerCase());
 
           return (
             <S.PlanCard 
                 key={index} 
-                $featured={pkg.primary || isEnterpriseState} 
+                $featured={pkg.primary || isEnterpriseState || isCurrentPlan} 
                 $disabled={isOverLimit}
             >
-              {pkg.primary && !isOverLimit && <S.FeaturedBadge>Active Choice</S.FeaturedBadge>}
+              {isCurrentPlan && (
+                <S.FeaturedBadge style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #15803d' }}>
+                  Current Plan
+                </S.FeaturedBadge>
+              )}
+              
               <S.PlanInfo>
                 <S.PlanName>{pkg.name}</S.PlanName>
                 <S.PlanDesc>{pkg.desc}</S.PlanDesc>
@@ -182,11 +155,7 @@ export default function Payment() {
               
               <S.PriceArea>
                 <div className="price-val">
-                  {currentPrice === "Custom" || currentPrice === "—" ? (
-                      currentPrice
-                  ) : (
-                      <><span>₦</span>{currentPrice}</>
-                  )}
+                  {currentPrice === "Custom" || currentPrice === "—" ? currentPrice : <><span>₦</span>{currentPrice}</>}
                 </div>
                 {currentPrice !== "Custom" && currentPrice !== "—" && pkg.type !== "Free" && (
                   <div className="price-sub">per {isYearly ? 'year' : 'month'}</div>
@@ -200,11 +169,12 @@ export default function Payment() {
               </S.FeatureList>
 
               <S.PlanButton 
-                $primary={pkg.primary || isEnterpriseState}
+                $primary={pkg.primary || isEnterpriseState || isCurrentPlan}
                 disabled={isOverLimit}
                 onClick={() => handlePlanSelection(pkg)}
               >
-                {pkg.type === "Enterprise" ? "Contact Support" : "Upgrade Plan"}
+                {pkg.type === "Enterprise" ? "Contact Support" : 
+                 isCurrentPlan ? "Top Up / Renew" : "Select Plan"}
               </S.PlanButton>
             </S.PlanCard>
           );

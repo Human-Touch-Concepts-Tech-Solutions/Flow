@@ -195,3 +195,44 @@ class DatabaseProcess:
                 "token_expires": None
             }}
         )
+    
+
+    async def process_checkout(self, email: str, checkout_data: Dict):
+        """
+        Updates user credits and logs subscription history.
+        checkout_data expects: planType, credits, billingCycle, totalPrice
+        """
+        credits_to_add = int(checkout_data.get("credits", 0))
+        
+        # Prepare the subscription entry
+        subscription_entry = {
+            "plan": checkout_data.get("planType"),
+            "credits_purchased": credits_to_add,
+            "billing_cycle": checkout_data.get("billingCycle"),
+            "amount_paid": checkout_data.get("totalPrice"),
+            "date": datetime.utcnow(),
+            "status": "completed"
+        }
+
+        # Atomic Update:
+        # 1. Increment balance and total_bought
+        # 2. Update current subscription status
+        # 3. Push the details into a history array (subscription_details)
+        result = await self.users_collection.update_one(
+            {"email": email.lower()},
+            {
+                "$inc": {
+                    "credits.balance": credits_to_add,
+                    "credits.total_bought": credits_to_add
+                },
+                "$set": {
+                    "subscription.plan": checkout_data.get("planType"),
+                    "subscription.last_updated": datetime.utcnow()
+                },
+                "$push": {
+                    "subscription_details": subscription_entry
+                }
+            }
+        )
+        
+        return result.modified_count > 0

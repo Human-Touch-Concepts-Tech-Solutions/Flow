@@ -14,7 +14,7 @@ export default function Pricing() {
   // sliderVal tracks the POSITION (0 to 7), not the credits
   const [sliderVal, setSliderVal] = useState(0);
 
-  // Math to convert slider position (0-7) to actual credits
+  //Math to convert slider position (0-7) to actual credits
   const getCreditsFromSlider = (val) => {
     const index = Math.floor(val);
     const remainder = val - index;
@@ -67,8 +67,9 @@ export default function Pricing() {
       planType: pkg.type,
       credits: credits,
       billingCycle: isYearly ? "yearly" : "monthly",
-      totalPrice: calculatePrice(credits, pkg),
-      timestamp: now 
+      // Change this: save the RAW number for the backend, keep string for UI only
+      totalPrice: isYearly ? (credits * 100 * 12 * 0.9) : (credits * 100), 
+      timestamp: Date.now() 
     };
 
     sessionStorage.setItem("pending_plan", JSON.stringify(selection));

@@ -1,21 +1,38 @@
-
 services:
   backend:
     build: ./backend
     container_name: backend_service
     ports:
       - "8000:8000"
-    # --- KEY ADDITIONS FOR HOT-RELOAD ---
     env_file:
       - ./backend/.env
     volumes:
-      - ./backend:/app  # Maps your local folder to the container folder
+      - ./backend:/app
     environment:
-      - PYTHONPATH=/app # Tells Python that 'app' is the root package
-    # ------------------------------------
+      - PYTHONPATH=/app
+      - CHROMA_HOST=chromadb  # Internal docker network name
+      - CHROMA_PORT=8000
+    depends_on:
+      - chromadb
     deploy:
       resources:
         limits:
           memory: 4g
 
- 
+  chromadb:
+    image: chromadb/chroma:0.5.5
+    container_name: chromadb
+    ports:
+      - "8001:8000" # Map 8001 on host to avoid conflict if you run something else on 8000
+    volumes:
+      - ./chroma_db_files:/data  # Map to /data inside the container
+    environment:
+      - PERSIST_DIRECTORY=/data
+    deploy:
+      resources:
+        limits:
+          memory: 4g # Your requested 4GB limit
+
+volumes:
+  chroma_data:
+    driver: local

@@ -70,7 +70,7 @@ export const SliderCard = styled.div`
   .card-top {
     display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;
   }
-  .val-group .num { font-size: 2.5rem; font-weight: 800; color: #2563eb; }
+  .val-group .num { font-size: 2.5rem; font-weight: 800; color: var( --lightblue); }
   .val-group .unit { color: #64748b; font-weight: 600; }
 `;
 
@@ -79,7 +79,7 @@ export const SliderBox = styled.div`
   input[type=range] {
     width: 100%; -webkit-appearance: none; background: transparent; position: relative; z-index: 10;
     &::-webkit-slider-thumb {
-      -webkit-appearance: none; height: 28px; width: 28px; border-radius: 50%; background: #2563eb;
+      -webkit-appearance: none; height: 28px; width: 28px; border-radius: 50%; background: var( --lightblue);
       border: 3px solid #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1); cursor: grab;
     }
   }
@@ -89,7 +89,7 @@ export const TrackFill = styled.div`
   position: absolute; top: 31px; height: 6px; width: 100%; background: #f1f5f9; border-radius: 10px;
   &::after {
     content: ''; position: absolute; height: 100%; width: ${props => props.$progress}%; 
-    background: #2563eb; border-radius: 10px;
+    background: var( --lightblue); border-radius: 10px;
   }
 `;
 
@@ -98,8 +98,8 @@ export const TicksContainer = styled.div` position: relative; height: 30px; marg
 export const TickMarker = styled.div`
   position: absolute; left: ${props => props.$left}%; transform: translateX(-50%); 
   display: flex; flex-direction: column; align-items: center;
-  .line { width: 1px; height: 6px; background: ${props => props.$active ? '#2563eb' : '#cbd5e1'}; }
-  span { font-size: 0.7rem; margin-top: 6px; color: ${props => props.$current ? '#2563eb' : '#94a3b8'}; font-weight: 600; }
+  .line { width: 1px; height: 6px; background: ${props => props.$active ? 'var( --lightblue)' : '#cbd5e1'}; }
+  span { font-size: 0.7rem; margin-top: 6px; color: ${props => props.$current ? 'var( --lightblue)' : '#94a3b8'}; font-weight: 600; }
 `;
 
 export const PlanGrid = styled.div`
@@ -107,14 +107,14 @@ export const PlanGrid = styled.div`
 `;
 
 export const PlanCard = styled.div`
-  background: #fff; border: 1px solid ${props => props.$featured ? '#2563eb' : '#e2e8f0'};
+  background: #fff; border: 1px solid ${props => props.$featured ? 'var( --lightblue)' : '#e2e8f0'};
   border-radius: 20px; padding: 32px; display: flex; flex-direction: column; position: relative;
   ${props => props.$disabled && css` opacity: 0.4; pointer-events: none; `}
 `;
 
 export const FeaturedBadge = styled.div`
   position: absolute; top: 16px; right: 16px; background: #eff6ff;
-  color: #2563eb; padding: 4px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: 700;
+  color: var( --lightblue); padding: 4px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: 700;
 `;
 
 export const PlanName = styled.h3` font-size: 1.25rem; font-weight: 700; color: #0f172a; `;

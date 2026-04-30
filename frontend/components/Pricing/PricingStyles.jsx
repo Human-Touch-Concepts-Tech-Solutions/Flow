@@ -70,7 +70,7 @@ export const SliderCard = styled.div`
 
   .val-group {
       text-align: right;
-      .num { display: block; font-size: 3rem; font-weight: 900; color: #2563eb; line-height: 1; }
+      .num { display: block; font-size: 3rem; font-weight: 900; color: var(--lightblue); line-height: 1; }
       .unit { color: #64748b; font-weight: 600; font-size: 1rem; }
   }
 `;
@@ -80,7 +80,7 @@ export const SliderBox = styled.div`
   input[type=range] {
     width: 100%; -webkit-appearance: none; background: transparent; position: relative; z-index: 10;
     &::-webkit-slider-thumb {
-      -webkit-appearance: none; height: 32px; width: 32px; border-radius: 50%; background: #2563eb;
+      -webkit-appearance: none; height: 32px; width: 32px; border-radius: 50%; background: var(--lightblue);
       border: 4px solid #fff; box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3); cursor: grab;
     }
   }
@@ -90,7 +90,7 @@ export const TrackFill = styled.div`
   position: absolute; top: 33px; height: 8px; width: 100%; background: #e2e8f0; border-radius: 4px;
   &::after {
     content: ''; position: absolute; height: 100%; width: ${props => props.$progress}%; 
-    background: #2563eb; border-radius: 4px;
+    background: var(--lightblue); border-radius: 4px;
   }
 `;
 
@@ -109,13 +109,13 @@ export const TickMarker = styled.div`
   .line {
     width: 2px;
     height: ${props => props.$current ? '14px' : '8px'};
-    background: ${props => props.$active ? '#2563eb' : '#cbd5e1'};
+    background: ${props => props.$active ? 'var(--lightblue);' : '#cbd5e1'};
   }
 
   span {
     font-size: 0.75rem; margin-top: 10px; white-space: nowrap;
     font-weight: ${props => props.$current ? '800' : '600'};
-    color: ${props => props.$current ? '#2563eb' : '#94a3b8'};
+    color: ${props => props.$current ? 'var(--lightblue);' : '#94a3b8'};
   }
 `;
 
@@ -124,7 +124,7 @@ export const PlanGrid = styled.div`
 `;
 
 export const PlanCard = styled.div`
-  background: #fff; border: 2px solid ${props => props.$featured ? '#2563eb' : '#f1f5f9'};
+  background: #fff; border: 2px solid ${props => props.$featured ? 'var(--lightblue);' : '#f1f5f9'};
   border-radius: 24px; padding: 40px; display: flex; flex-direction: column; position: relative;
   transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1);
   ${props => props.$disabled && css` opacity: 0.5; filter: grayscale(1); pointer-events: none; `}
@@ -132,7 +132,7 @@ export const PlanCard = styled.div`
 `;
 
 export const FeaturedBadge = styled.div`
-  position: absolute; top: -14px; left: 50%; transform: translateX(-50%); background: #2563eb;
+  position: absolute; top: -14px; left: 50%; transform: translateX(-50%); background: var(--lightblue);;
   color: white; padding: 4px 16px; border-radius: 20px; font-size: 0.75rem; font-weight: 700;
 `;
 
@@ -153,8 +153,8 @@ export const FeatureList = styled.ul`
 
 export const PlanButton = styled.button`
   width: 100%; padding: 16px; border-radius: 12px; border: none; font-weight: 700; font-size: 1rem; cursor: pointer;
-  background: ${props => props.$primary ? '#2563eb' : '#f8fafc'};
+  background: ${props => props.$primary ? 'var(--lightblue);' : '#f8fafc'};
   color: ${props => props.$primary ? '#fff' : '#0f172a'};
   transition: all 0.2s;
-  &:hover { background: ${props => props.$primary ? '#1d4ed8' : '#e2e8f0'}; transform: scale(1.02); }
+  &:hover { background: ${props => props.$primary ? 'var(--lightblue);' : '#e2e8f0'}; transform: scale(1.02); }
 `;

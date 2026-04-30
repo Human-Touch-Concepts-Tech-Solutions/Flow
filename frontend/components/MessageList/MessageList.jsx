@@ -147,24 +147,60 @@ export default function MessageList({ messages = [], isLoading = false }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '75%', gap: '2px' }}>
                 <AIBubble style={{ maxWidth: '100%', width: '100%' }}>
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      code({ node, inline, className, children, ...props }) {
-                        const match = /language-(\w+)/.exec(className || "");
-                        return !inline && match ? (
-                          <CodeBlock 
-                            language={match[1]} 
-                            value={String(children).replace(/\n$/, "")} 
-                          />
-                        ) : (
-                          <code className={className} {...props}>{children}</code>
-                        );
-                      },
-                    }}
-                  >
-                    {msg.text}
-                  </ReactMarkdown>
+              
+
+<ReactMarkdown
+  remarkPlugins={[remarkGfm]}
+  components={{
+    // 1. Table Handling
+    table: ({node, ...props}) => <table {...props} />,
+    
+    // 2. Link Handling (Merged)
+    a: ({ node, children, href, ...props }) => (
+      <a 
+        href={href} 
+        target="_blank" 
+        rel="noopener noreferrer" 
+        {...props}
+      >
+        {children}
+      </a>
+    ),
+
+    // 3. Code Handling (Fixed for highlighting)
+    code({ node, inline, className, children, ...props }) {
+      const match = /language-(\w+)/.exec(className || "");
+      const content = String(children).replace(/\n$/, "");
+
+      if (!inline && match) {
+        return (
+          <CodeBlock 
+            language={match[1]} 
+            value={content} 
+          />
+        );
+      }
+
+      // Inline code (e.g. `npm install`)
+      //  explicitly remove custom styles here to prevent "line highlighting"
+      return (
+        <code 
+          style={{ 
+            background: '#e6e6e6', 
+            padding: '2px 4px', 
+            borderRadius: '4px',
+            color: '#ff0037' 
+          }} 
+          {...props}
+        >
+          {children}
+        </code>
+      );
+    },
+  }}
+>
+  {msg.text}
+</ReactMarkdown>
             {msg.files && msg.files.map((file, i) => (
   <div 
     key={i}

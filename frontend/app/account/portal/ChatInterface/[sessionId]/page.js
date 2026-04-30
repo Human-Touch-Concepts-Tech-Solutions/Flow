@@ -223,6 +223,32 @@ useEffect(() => {
     loadHistory();
   }
 }, [sessionId]);
+
+// checkout 
+useEffect(() => {
+  const pendingPlanRaw = sessionStorage.getItem("pending_plan");
+  
+  if (pendingPlanRaw) {
+    try {
+      const plan = JSON.parse(pendingPlanRaw);
+      
+      // Check if it's a paid plan
+      if (plan.planType !== "Free") {
+        // NOTE: Make sure this path matches your new folder structure
+        // If your checkout is in portal/checkout, use:
+        router.push("/account/portal/checkout");
+      } else {
+        // Clear free plans as they don't need checkout
+        sessionStorage.removeItem("pending_plan");
+      }
+    } catch (e) {
+      console.error("Error parsing plan in ChatInterface", e);
+    }
+  }
+}, [router]);
+
+
+
  return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' }}>
       

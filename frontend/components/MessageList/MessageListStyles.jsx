@@ -7,10 +7,15 @@ export const MessageContainer = styled.div`
   background: #f8fafc;
   display: flex;
   flex-direction: column;
-  /* Reduced bottom padding from 150px to 80px */
   padding: 80px 16px 80px 16px; 
   scroll-behavior: smooth;
+
+  /* Responsive padding for smaller screens */
+  @media (max-width: 768px) {
+    padding: 60px 12px 70px 12px;
+  }
 `;
+
 export const MessageListWrapper = styled.div`
   max-width: 900px;
   width: 100%;
@@ -22,11 +27,9 @@ export const MessageListWrapper = styled.div`
 
 export const MessageBubble = styled.div`
   display: flex;
-  align-items: flex-end; /* Align avatars to the bottom of the bubble */
+  align-items: flex-end;
   gap: 8px;
-  width: 100%; /* The container takes full width... */
-  
-  /* ...but the alignment pushes the bubble to the side */
+  width: 100%;
   justify-content: ${({ $isUser }) => ($isUser ? "flex-end" : "flex-start")};
 `;
 
@@ -37,37 +40,44 @@ export const Avatar = styled.div`
   background: ${({ $isUser }) => ($isUser ? "var(--lightblue)" : "#e2e8f0")};
   color: white;
   display: flex;
-
-  
   align-items: center;
   justify-content: center;
   font-size: 0.8rem;
   flex-shrink: 0;
+
+  @media (max-width: 480px) {
+    width: 24px;
+    height: 24px;
+    font-size: 0.7rem;
+  }
 `;
 
 export const bubbleBase = `
   padding: 10px 14px;
   border-radius: 18px;
   font-size: 0.95rem;
-  line-height: 1.5; /* Slightly increased for readability */
+  line-height: 1.5;
   position: relative;
-  max-width: 75%; 
-  width: fit-content; 
-  
-  /* CRITICAL FIXES */
-  word-break: break-word; /* Better than word-wrap for long strings/code */
+  word-break: break-word;
   overflow-wrap: break-word;
-  white-space: pre-wrap; /* Ensures spacing is preserved but text wraps */
+  white-space: pre-wrap;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+
+  /* Mobile adjustment: bubbles should be wider on small screens */
+  @media (max-width: 768px) {
+    max-width: 90% !important;
+    font-size: 0.9rem;
+  }
 `;
+
 export const UserBubble = styled.div`
   ${bubbleBase}
   background: var(--lightblue);
   font-family: var(--font-ubuntu-mono);
   color: white;
   border-bottom-right-radius: 4px;
-  /* Keeps text aligned left inside the right-aligned bubble */
-  text-align: left; 
+  text-align: left;
+  max-width: 75%;
 `;
 
 export const AIBubble = styled.div`
@@ -77,57 +87,100 @@ export const AIBubble = styled.div`
   border: 1px solid #e5e7eb;
   border-bottom-left-radius: 4px;
   font-family: var(--font-ubuntu-mono);
+  
+  max-width: 100%;
+  width: fit-content;
+  min-width: 50px;
 
-  /* Ensure no extra space at the bottom of the markdown */
-  & > *:last-child {
-    margin-bottom: 0 !important;
+  /* TABLE RESPONSIVENESS FIX */
+  table {
+    display: block;
+    width: 100%;
+    overflow-x: auto; /* Essential for mobile */
+    -webkit-overflow-scrolling: touch;
+    border-collapse: collapse;
+    margin: 15px 0;
+    font-size: 0.85rem;
+    border: 1px solid #e2e8f0;
   }
 
-  /* Fix for ReactMarkdown tags */
-  p {
-    margin: 0 0 10px 0; /* Add space between paragraphs */
+  th, td {
+    border: 1px solid #e2e8f0;
+    padding: 8px 12px;
+    text-align: left;
+    min-width: 100px; /* Prevents text from squishing too much */
   }
 
-  p:last-child {
-    margin-bottom: 0; /* Remove margin from the last paragraph to keep bubble tight */
+  th {
+    background-color: #f8fafc;
+    font-weight: 600;
   }
 
+  tr:nth-child(even) {
+    background-color: #f1f5f9;
+  }
+
+  /* BLOCKQUOTE */
+  blockquote {
+    border-left: 4px solid #cbd5e1;
+    margin: 10px 0;
+    padding-left: 16px;
+    color: #475569;
+    font-style: italic;
+  }
+
+  /* LISTS */
   ul, ol {
-    margin: 5px 0;
+    margin: 10px 0;
     padding-left: 20px;
   }
 
   li {
-    margin-bottom: 5px;
+    margin-bottom: 4px;
   }
 
-  /* Fix for long code blocks or snippets */
+  /* TEXT WRAPPING */
+  p {
+    margin: 0 0 12px 0;
+    white-space: pre-wrap;
+  }
+
+  /* INLINE CODE */
   code {
     background: #f1f5f9;
-    padding: 2px 4px;
+    padding: 2px 5px;
     border-radius: 4px;
-    font-size: 0.85rem;
+    font-family: var(--font-ubuntu-mono);
+    font-size: 0.85em;
+    color: #e11d48;
   }
 
-  pre {
-    background: #e0e0e0;
-    color: #f8fafc;
-    padding: 10px;
-    border-radius: 10px;
-    overflow-x: auto; /* Adds horizontal scroll if code is too long */
-    margin: 10px 0;
-    width: 100%; /* Keeps code inside the bubble */
-    
-    code {
-      background: transparent;
-      padding: 0;
-      color: inherit;
+  /* LINKS */
+  a {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+    word-break: break-all;
+
+    &:hover {
+      color: #1d4ed8;
+      text-decoration: underline;
     }
+  }
+
+  p a, li a {
+    color: #2563eb;
+  }
+
+  /* Ensure syntax highlighter containers don't overflow */
+  pre {
+    max-width: 100% !important;
+    overflow-x: auto !important;
   }
 `;
 
 export const LoadingBubble = styled.div`
-  /* Loading bubble also needs to fit content */
   width: fit-content;
   background: white;
   padding: 12px 16px;

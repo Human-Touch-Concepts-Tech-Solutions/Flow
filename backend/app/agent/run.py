@@ -1,4 +1,5 @@
 import asyncio
+import email
 import json
 # from click import prompt
 import pytz
@@ -143,6 +144,28 @@ class FlowtruAgent:
         last_name = user_profile.get("last_name", "")
         gender = user_profile.get("gender", "unknown")
         profession = user_profile.get("profession", "unknown")
+        phone = user_profile.get("phone", "unknown")
+        
+
+        #platform infos
+        role = user_profile.get("role", "unknown")
+        access_level = user_profile.get("access_level", "unknown")
+        time_zone = user_profile.get("timezone", "unknown")
+        joined_UTC = user_profile.get("created_at", "unknown")
+        current_local_dt = TimeManager.get_user_time(user_tz)
+        
+        #credit details
+        credit = user_profile.get("credits", "unknown")
+        credits_bal = credit.get("balance", "unknown")
+        total_used = credit.get("total_used", "unknown")
+        total_bought = credit.get("total_bought", "unknown")
+
+        # subscription details
+        subscription = user_profile.get("subscription", "unknown")
+        sub_plan = subscription.get("plan", "unknown")
+
+
+        
 
         # Logics for prompt construction:
         if gender == "male":
@@ -194,8 +217,19 @@ class FlowtruAgent:
 
         <user_context>
         ## USER BIO
-        - you are currently interacting and attending to **{first_name} {last_name}**, {possessive} first name is {first_name}, last name {last_name}.
-        - {pronoun.capitalize()} is a {profession} by profession, and you should tailor your orchestration to {possessive} specific professional rhythmms and needs.
+        - **Identity:** you are currently interacting and attending to **{first_name} {last_name}**, {possessive} first name is {first_name}, last name {last_name}.
+        - **Profession:** {pronoun.capitalize()} is a {profession} by profession. Tailor your orchestration to {possessive} specific professional rhythms, vocabulary, and technical needs.
+        - **Contact:** Email: {self.email} | Phone: {phone}
+
+        ## PLATFORM CONTEXT
+        - **Role & Access:** The user is categorized as a `{role}` with an `{access_level}` access level.
+        - **Environment:** Timezone is set to {time_zone}. The user joined the platform on {joined}.
+        - **Subscription:** Currently on the **{sub_plan}** plan.
+
+        ## ACCOUNT ECONOMICS
+        - **Credit Balance:** {credits_bal} credits available.
+        - **Usage History:** Total credits used: {total_used} | Total credits purchased: {total_bought}.
+        - **Instruction:** If the credit balance is low, prioritize efficiency in your responses. If they are on a premium subscription plan, ensure your "professional rhythm" matches a high-tier service experience.
             
         ## SESSION CONTINUITY (ACTIVE)
         **Definition:** A session is a rolling 24-hour interaction cycle. It begins at the first authentication event of the day and concludes exactly 24 hours later, at which point it is archived into history. 

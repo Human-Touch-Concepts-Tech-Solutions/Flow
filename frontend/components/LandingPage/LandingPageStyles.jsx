@@ -64,10 +64,11 @@ export const CTA = styled.button`
   margin-top: clamp(5px, 5%, 15px);
   padding: 12px 28px;
   font-size: 16px;
-  font-family: var(--font-ubuntu-mono);
+  font-family: var(--font-geist-mono);
   border-radius: 50px;
   border: none;
   cursor: pointer;
+  text-decoration: none;
 
   display: flex;
   align-items: center;
@@ -136,5 +137,34 @@ export const PricingLink = styled.button`
   @media (max-width: 480px) {
     font-size: 13px;
     padding: 6px 15px;
+  }
+`;
+
+export const NavGroup = styled.div`
+  display: flex;
+  gap: 12px;
+`;
+
+export const NavLink = styled.button`
+  text-decoration: none;
+  letter-spacing: 1px;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  padding: 8px 20px;
+  border-radius: 50px;
+  color: #2f496e;
+  font-family: var(--font-geist-mono);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  
+
+  &:hover {
+    background: #f8fafc;
+    border-color: #2f496e;
   }
 `;

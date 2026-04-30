@@ -4,6 +4,9 @@ import os
 import logging
 import httpx
 import smtplib
+import chromadb
+from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
 import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -272,3 +275,48 @@ class ConnectionManager:
             print(f"User {user_id} is offline. Event {event_type} dropped.")
 
 manager = ConnectionManager()
+
+
+
+
+class VectorConnection:
+    def __init__(self):
+        self.client = None
+        self.model = None
+
+    async def connect(self):
+        try:
+            # 1. Load Embedding Model
+            model_name = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
+            logger.info(f"Loading embedding model: {model_name}...")
+            self.model = SentenceTransformer(model_name)
+
+            # 2. Connect to ChromaDB
+            host = os.getenv("CHROMA_HOST", "chromadb")
+            port = int(os.getenv("CHROMA_PORT", 8000))
+
+            self.client = chromadb.HttpClient(
+                host=host,
+                port=port,
+                settings=Settings(
+                    anonymized_telemetry=False, # This is the correct way to disable it
+                    allow_reset=True
+                ),
+                tenant="default_tenant",
+                database="default_database"
+            )
+
+            self.client.heartbeat()
+            logger.info("✅ Vector Engine & ChromaDB connected")
+
+        except Exception as e:
+            logger.error(f"❌ Vector Connection Error: {e}")
+            raise e
+
+    def get_embedding(self, text: str):
+        return self.model.encode(text).tolist()
+
+    def attach_to_app(self, app):
+        app.state.vector_engine = self
+
+  
