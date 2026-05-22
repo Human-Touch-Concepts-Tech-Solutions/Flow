@@ -6,8 +6,12 @@ class DataState:
     def __init__(self):
         # Format: {"email@gmail.com": [log_list]}
         self._registry: Dict[str, List[Dict]] = {}
+
+        self._file_registry: Dict[str, Dict[str, Dict]] = {}
         # self data holding
         self.system_config: Dict = {}
+
+        self.tools: List[Dict] = []
         # Lock to prevent race conditions during high-speed updates
         self._lock = asyncio.Lock()
 
@@ -41,11 +45,23 @@ class DataState:
                 data["_id"] = str(data["_id"])
                 
             self.system_config[category] = data
+            if data.get("type") == "tool_definition":
+                tool_name = data.get("tool_name")
+                
+                # Remove old version of this tool if it exists
+                self.tools = [t for t in self.tools if t.get("tool_name") != tool_name]
+                
+                # Add the fresh version
+                self.tools.append(data)
+                print(f"[DataState] 🛠️ Dedicated Tools List Updated: {tool_name}")
+            
             print(f"[DataState] ✅ System Config Memory Updated: {category}")
 
     async def get_config(self) -> Dict:
         """Returns the full system configuration."""
         return self.system_config
+    
+    
     
     
     

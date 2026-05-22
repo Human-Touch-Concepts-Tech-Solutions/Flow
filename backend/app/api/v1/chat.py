@@ -1,5 +1,9 @@
 import uuid
+import os
+from pathlib import Path
+import json
 from typing import Optional, List
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, HTTPException
 from app.core.security import TokenSecurity, SessionManager
 from app.agent.run import run_agent
@@ -16,6 +20,8 @@ async def handle_chat(
     # 1. Access services from the central App State
     # This ensures we use the SAME manager instance used by the WebSocket
     ai_service = request.app.state.ai
+    monitor = request.app.state.monitor
+    data_state = request.app.state.data_state
     supabase = request.app.state.supabase
     manager = request.app.state.connection_manager 
     db_manager = request.app.state.db_process
@@ -33,61 +39,142 @@ async def handle_chat(
         "ip_address": request.client.host
     }
 
+
+    # logic to just return files names only 
+    
+
     # 2. Handle File Uploads
-    if files:
-        user_folder = current_email.replace("@", "_").replace(".", "_")
+    # if files:
+    #     user_folder = current_email.replace("@", "_").replace(".", "_")
         
-        for file in files:
-            try:
-                file_ext = file.filename.split('.')[-1]
-                unique_filename = f"{uuid.uuid4()}.{file_ext}"
-                storage_path = f"uploads/{user_folder}/{unique_filename}"
+    #     for file in files:
+    #         try:
+    #             file_ext = file.filename.split('.')[-1]
+    #             unique_filename = f"{uuid.uuid4()}.{file_ext}"
+    #             storage_path = f"uploads/{user_folder}/{unique_filename}"
                 
-                file_content = await file.read()
+    #             file_content = await file.read()
                 
-                supabase.storage.from_("chat-assets").upload(
-                    path=storage_path,
-                    file=file_content,
-                    file_options={
-                        "content-type": file.content_type,
-                        "cache-control": "3600",
-                        "upsert": "true",
-                        "x-content-disposition": "attachment" 
-                    }
-                )
+    #             supabase.storage.from_("chat-assets").upload(
+    #                 path=storage_path,
+    #                 file=file_content,
+    #                 file_options={
+    #                     "content-type": file.content_type,
+    #                     "cache-control": "3600",
+    #                     "upsert": "true",
+    #                     "x-content-disposition": "attachment" 
+    #                 }
+    #             )
                 
-                public_url = supabase.storage.from_("chat-assets").get_public_url(storage_path)
+    #             public_url = supabase.storage.from_("chat-assets").get_public_url(storage_path)
                 
-                files_info.append({
-                    "name": file.filename,
-                    "url": public_url,
-                    "type": file.content_type
-                })
-            except Exception as e:
-                print(f"Upload error: {e}")
-                raise HTTPException(status_code=500, detail=f"Upload failed for {file.filename}")
+    #             files_info.append({
+    #                 "name": file.filename,
+    #                 "url": public_url,
+    #                 "type": file.content_type
+    #             })
+    #         except Exception as e:
+    #             print(f"Upload error: {e}")
+    #             raise HTTPException(status_code=500, detail=f"Upload failed for {file.filename}")
 
      # data satisfies the agent's expected input format, including the new 'files' and 'env_context' fields.
-    data_state = request.app.state.data_state
-    pending_logs = await data_state.consume_logs(current_email)
+    
+    
 
     # session logics
     session_id = await SessionManager.check_active_session(current_email)
     if not session_id:
         session_id = await SessionManager.create_session(current_email)
 
+
+    # 1. Setup Paths
+    user_dir = current_email.replace("@", "_").replace(".", "_")
+    base_assets_path = Path(f"active_sessions/{user_dir}/assets")
+    uploads_path = base_assets_path / "uploads"
+    uploads_path.mkdir(parents=True, exist_ok=True)
+
+    files_for_agent = [] 
+    
+    # 2. Handle File Uploads & Registry Metadata
+    if files:
+        metadata_file = base_assets_path / "metadata.json"
+        
+        # Load existing metadata or initialize the Registry structure
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+        else:
+            metadata = {
+                "registry": {
+                    "files": {},
+                    "total_stats": {"count": 0, "total_size_kb": 0.0}
+                }
+            }
+
+        current_utc = datetime.now(timezone.utc).isoformat()
+
+        for file in files:
+            try:
+                # Save the file physically
+                file_path = uploads_path / file.filename
+                content = await file.read()
+                
+                with open(file_path, "wb") as f:
+                    f.write(content)
+                
+                # Calculate size
+                size_kb = len(content) / 1024
+                file_size_str = f"{size_kb:.2f} KB"
+
+                # Update Registry: Using filename as the direct key
+                metadata["registry"]["files"][file.filename] = {
+                    "category": "uploads",
+                    "mime_type": file.content_type,
+                    "size": file_size_str,
+                    "abs_path": str(file_path.absolute()),
+                    "created_at": current_utc,
+                    "metadata": {
+                        "original_name": file.filename,
+                        "last_accessed": current_utc
+                    }
+                }
+
+                # Update running stats
+                metadata["registry"]["total_stats"]["count"] = len(metadata["registry"]["files"])
+                metadata["registry"]["total_stats"]["total_size_kb"] += size_kb
+                metadata["registry"]["total_stats"]["last_update"] = current_utc
+
+                # Add to the list for the Agent
+                files_for_agent.append(file.filename)
+                
+            except Exception as e:
+                print(f"File process error: {e}")
+                continue
+
+        # Save the updated registry
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=4)
+
+    
+    #logs for the agent to consume - this is the "Signal Box" concept you mentioned.
+    pending_logs = await data_state.consume_logs(current_email)
+
+    
+
     # 3. Perform AI Generation
     agent_response = await run_agent(
         email=current_email,
-        # session_id=session_id,
-        text=message,
+      
+        text=message, 
         ai_service=ai_service,
         db=db_manager.db,
-        files=files_info,
+        vector_manager=request.app.state.vector_manager,
+        files=files_for_agent,  # Just the file names for the agent
         env_context=env_context,
         pending_logs=pending_logs,
         session_id=session_id,
-        data_state=data_state
+        data_state=data_state,
+        
        
     )
 

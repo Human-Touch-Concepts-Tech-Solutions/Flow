@@ -11,6 +11,7 @@ from app.api.v1.chat import router as chat_router
 from app.api.v1.ws import router as ws_router
 from app.agent.manager.monitor import Monitor
 from app.agent.manager.data import DataState
+from app.agent.Accessibility.vectordatabase import VectorManager
 
 
 #Local imports 
@@ -56,61 +57,60 @@ state_registry = DataState()
 # Lifecycle events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    # seesion file setup
+    # 1. Directory setup
     os.makedirs("active_sessions", exist_ok=True)
-    #logger  for app startup
     logger.info("Starting up Flowtru Assistant API...")
    
-   # LLM and Database  startup
+    # 2. Connections Initialization
     ai_conn = MistralConnection()
     mongo = MongoConnection()
-    vector_conn = VectorConnection()
+    vector_conn = VectorConnection() # Initialize the connection object
 
-    #LLM  Health Check 
+    # 3. AI Health Check
     ai_ready = await ai_conn.check_ai_health()
     if not ai_ready:
         logger.warning("⚠️ Mistral Cloud API is not responding. AI features may fail.")
     app.state.ai = ai_conn
 
-    # Llm check 
+    # 4. Connect to Vector DB First
+    await vector_conn.connect()
+    vector_conn.attach_to_app(app)
+    # Initialize the Manager (This is the 'vector_db' the Monitor needs)
+    vector_manager = VectorManager(vector_conn)
+    app.state.vector_manager = vector_manager
+
+    # 5. Connect to MongoDB
     await mongo.open_connection()
     if mongo.db is not None:
-        # Datasate Intialization and Monitor setup
         app.state.data_state = DataState()
         app.state.db_process = DatabaseProcess(mongo.db)
-        # Monitor setup to watch for changes in MongoDB and update DataState accordingly
-        app.state.monitor = Monitor(mongo.db, app.state.data_state)
+        
+        # FIX: Pass the vector_manager as the 3rd argument here!
+        app.state.monitor = Monitor(
+            mongo.db, 
+            app.state.data_state, 
+            vector_manager
+        )
+        
         await app.state.monitor.start()
-
-        logger.info("✅ DataState and Monitor are synchronized.")
+        logger.info("✅ DataState, VectorDB, and Monitor are synchronized.")
     else:
         logger.error("❌ MongoDB Database instance is None!")
 
-    # other connections (Email, OAuth, Supabase) can be initialized here as well
-    #start email connection
-
-    await vector_conn.connect()
-    vector_conn.attach_to_app(app)
+    # 6. Initialize remaining services
     email_conn = EmailConnection()
     app.state.otp_service = OneTimeAuth(email_conn)
-
-    #Google oAuth
+    
     oauth_manager = OAuthConnection()
     app.state.oauth = oauth_manager.oauth
    
-    #Supabase connection
-    # Initialize the connection
     supabase_manager.connect()
-    # Store the client in app.state for global access
     app.state.supabase = supabase_manager.client
-
-    # websocket manager
     app.state.connection_manager = manager
 
-    yield  # This is where the application runs
+    yield  # Application runs...
 
-    # 2. CLEANUP ON SHUTDOWN
+    # 7. CLEANUP
     logger.info("Shutting down Flowtru Assistant API...")
     await mongo.close_connection()
 
@@ -163,7 +163,6 @@ async def health_check():
         "version": "2.0.0",
         "environment": os.getenv("ENV", "development")
     }
-
 
 @app.get("/api/v1/test-ai")
 async def test_ai(prompt: str = "Hello Mistral, are you there, list 40 things you can do ?"):
@@ -306,3 +305,121 @@ async def test_vector_logic(
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+
+
+from fastapi import Query
+
+@app.get("/test-dispatcher")
+async def debug_dispatcher(text: str = Query(..., description="The message to analyze")):
+    try:
+        # 1. Initialize the agent (mocking the database/session parts for the test)
+        from app.agent.run import FlowtruAgent
+        import json
+        
+        agent = FlowtruAgent(
+            email="test@flowtru.ai",
+            ai_service=app.state.ai, # Using the AI state you initialized
+            db_instance=None,
+            env_context={},
+            pending_logs=[],
+            session_id="debug_session",
+            data_state=None
+        )
+        
+        # 2. Get the prompt string from your Dispatcher method
+        dispatcher_instructions = await agent.Dispatcher(text)
+        
+        # 3. Call the AI service directly to see the raw output
+        raw_ai_response = await app.state.ai.generate_response(dispatcher_instructions)
+        
+        # 4. Attempt to parse it as JSON for a clean browser view
+        try:
+            # Cleaning common LLM markdown artifacts
+            clean_json = raw_ai_response.replace("```json", "").replace("```", "").strip()
+            json_decision = json.loads(clean_json)
+            return {
+                "input": text,
+                "decision": json_decision,
+                "status": "success"
+            }
+        except Exception:
+            return {
+                "input": text,
+                "raw_reply": raw_ai_response,
+                "error": "AI did not return valid JSON"
+            }
+            
+    except Exception as e:
+        return {"error": str(e)}
+    
+
+
+@app.get("/api/v1/debug/vector-inspect")
+async def inspect_vector_db(collection_name: str = "system_tools"):
+    """
+    Directly peek into a ChromaDB collection to see stored documents and metadata.
+    """
+    try:
+        # 1. Access the manager
+        vm: VectorManager = app.state.vector_manager
+        
+        # 2. Get the collection
+        collection = vm.client.get_collection(name=collection_name)
+        
+        # 3. Get all data (peek at the first 10 items)
+        data = collection.get(
+            include=["documents", "metadatas", "embeddings"] # Leave out embeddings if it's too much text
+        )
+        
+        return {
+            "collection": collection_name,
+            "count": collection.count(),
+            "items": [
+                {
+                    "id": data["ids"][i],
+                    "content": data["documents"][i],
+                    "metadata": data["metadatas"][i]
+                }
+                for i in range(len(data["ids"]))
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e), "message": f"Could not find collection '{collection_name}'"}
+
+@app.get("/api/v1/debug/vector-collections")
+async def list_collections():
+    """List all active collections in ChromaDB."""
+    vm: VectorManager = app.state.vector_manager
+    colls = vm.client.list_collections()
+    return {"collections": [c.name for c in colls]}
+
+
+
+@app.get("/api/v1/debug/vector-search")
+async def search_vector_db(
+    q: str = Query(..., description="The natural language query to search for"),
+    collection_name: str = "system_tools",
+    limit: int = 3
+):
+    """
+    Search a collection using natural language.
+    """
+    try:
+        vm: VectorManager = app.state.vector_manager
+        
+        # Use the query method from your VectorManager
+        results = await vm.query(
+            collection_name=collection_name,
+            query_text=q,
+            limit=limit
+        )
+        
+        return {
+            "query": q,
+            "collection": collection_name,
+            "match_count": len(results),
+            "results": results
+        }
+    except Exception as e:
+        return {"error": str(e)}

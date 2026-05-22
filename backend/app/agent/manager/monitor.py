@@ -1,8 +1,14 @@
 import asyncio
+import os
+import shutil
+from pathlib import Path
+from fastapi import UploadFile
+
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
-from typing import Dict
+from typing import Dict, List
 from .data import DataState
+from app.agent.Accessibility.vectordatabase import VectorManager
 
 class Monitor:
     # Fields that should be ignored in logs for security/privacy
@@ -14,9 +20,10 @@ class Monitor:
         "password"
     }
 
-    def __init__(self, db_client: AsyncIOMotorClient, state: DataState):
+    def __init__(self, db_client: AsyncIOMotorClient, state: DataState,vector_db: VectorManager):
         self.db = db_client
         self.state = state
+        self.vector_db = vector_db
         self.is_running = True
         self._ready = asyncio.Event()
 
@@ -33,26 +40,72 @@ class Monitor:
 
 
     async def preload_system_config(self):
-        """Initial load of 'self' collection into DataState."""
+        """Initial load of 'self' collection into DataState and Vector DB."""
         try:
-            # Explicitly target the collection
             cursor = self.db["self"].find({}) 
             count = 0
             async for doc in cursor:
-                category = doc.get("type", "general")
-                await self.state.update_system_config(category, doc)
+                doc_type = doc.get("type")
+                
+                if doc_type == "tool_definition":
+                    # Sync tools to Vector DB and DataState
+                    await self._sync_tool_to_vector_db(doc)
+                else:
+                    # Sync general configs to DataState
+                    category = doc.get("type", "general")
+                    await self.state.update_system_config(category, doc)
                 count += 1
-            print(f"[Monitor] Initial 'self' config preload complete. {count} docs loaded.")
+            print(f"[Monitor] Initial 'self' preload complete. {count} items processed.")
         except Exception as e:
             print(f"[Monitor] Preload Error: {e}")
 
-    
+    async def _sync_tool_to_vector_db(self, tool_doc: Dict):
+        """
+        Refined Sync: Embeds only intent-focused data (Name, Purpose, Actions, Terms)
+        to reduce vector noise and improve matching accuracy.
+        """
+        try:
+            tool_name = tool_doc.get("tool_name", "unknown_tool")
+            tool_id = tool_doc.get("_id")
+            
+            # 1. Extract the clean logic components
+            details = tool_doc.get("details", "")
+            actions = ", ".join(tool_doc.get("action", []))
+            keywords = ", ".join(tool_doc.get("keywords", []))
+
+            # 2. Construct the Intent-Focused Narrative
+            # Using the specific headers you requested for cleaner embedding separation
+            full_searchable_text = (
+                f"Tool: {tool_name}\n"
+                f"[PURPOSE]: {details}\n"
+                f"[ACTIONS]: {actions}\n"
+                f"[TERMS]: {keywords}"
+            )
+
+            # 3. Upsert into Vector DB
+            success = await self.vector_db.upsert(
+                collection_name="system_tools",
+                content=full_searchable_text,
+                doc_id=str(tool_id),
+                metadata={
+                    "tool_name": tool_name,
+                    "type": "tool_definition",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+            )
+
+            if success:
+                print(f"✅ Vector Sync (Intent-Only): {tool_name}")
+                # Update RAM cache for full technical details access
+                await self.state.update_system_config(f"tool_{tool_name}", tool_doc)
+            
+        except Exception as e:
+            print(f"❌ Error during Tool Intent Sync: {e}")
 
     
     async def watch_system_config(self):
         """Watches the 'self' collection for configuration changes."""
         try:
-            # Use string access ["self"] to avoid Python's self keyword conflict
             async with self.db["self"].watch() as stream:
                 async for change in stream:
                     if change["operationType"] in ["update", "replace", "insert"]:
@@ -60,8 +113,15 @@ class Monitor:
                         updated_doc = await self.db["self"].find_one({"_id": doc_id})
                         
                         if updated_doc:
-                            category = updated_doc.get("type", "general")
-                            await self.state.update_system_config(category, updated_doc)
+                            doc_type = updated_doc.get("type")
+                            
+                            # If it's a tool, sync it to Vector DB
+                            if doc_type == "tool_definition":
+                                await self._sync_tool_to_vector_db(updated_doc)
+                            else:
+                                # Normal config update for other types
+                                category = updated_doc.get("type", "general")
+                                await self.state.update_system_config(category, updated_doc)
         except Exception as e:
             print(f"❌ Monitor Config Watcher Error: {e}")
 
@@ -96,7 +156,9 @@ class Monitor:
             print(f"❌ Monitor Database Watcher Error: {e}")
           
 
+    
 
+      
     async def internal_event_hook(self, email: str, category: str, details: Dict, description: str):
         """
         Manual entry point for things like 'FILE_UPLOADED' or 'SECURITY_ALERT'.
