@@ -1,7 +1,8 @@
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import logging
 from app.agent.Accessibility.vectordatabase import VectorManager
+
 
 logger = logging.getLogger(__name__)
 
@@ -11,31 +12,59 @@ class Aquire:
         vector_db: VectorManager, 
         email: str, 
         queries: List[str],
-        target_scope: Optional[str] = "all",
-        limit_per_query: int = 3
+        target_scope: Optional[Union[str, List[str]]] = "all",
+        limit_per_query: int = 3,
+        start_timeframe: Optional[str] = None  # Expected Format: ISO Timestamp String
     ):
         """
-        Initializes the Acquisition Tool with stateful user session context and targets.
+        Initializes the Acquisition Tool with stateful user session context, multi-scope targets, and timeframe caps.
         """
         self.vector_db = vector_db
         self.email = email
         self.queries = queries or []
-        self.target_scope = target_scope.lower() if target_scope else "all"
         self.limit_per_query = limit_per_query
+        self.start_timeframe = start_timeframe
         
+        # Parse flexible scope definitions (lists, comma strings, or default fallbacks)
+        if not target_scope:
+            self.scopes = ["all"]
+        elif isinstance(target_scope, list):
+            self.scopes = [s.lower().strip() for s in target_scope]
+        else:
+            self.scopes = [s.lower().strip() for s in target_scope.split(",")]
+
+        if "all" in self.scopes:
+            self.scopes = ["all"]
+
         # Distance threshold: 1.0 means highly inclusive for l2/cosine distance spaces.
-        self.DISTANCE_THRESHOLD = 1.0
+        self.DISTANCE_THRESHOLD = 2.0
+
+    def _is_within_timeframe(self, item_metadata: Dict[str, Any]) -> bool:
+        """
+        Validates if a returned vector chunk falls within the requested timeframe boundaries.
+        """
+        if not self.start_timeframe:
+            return True
+            
+        # Inspect variations of timestamps placed by the sync trackers
+        item_time_str = item_metadata.get("logged_at") or item_metadata.get("last_sync_utc")
+        if not item_time_str:
+            return True # If no time info exists, keep it to be safe
+            
+        try:
+            # Basic ISO string string comparison works directly if formatted uniformly
+            return item_time_str >= self.start_timeframe
+        except Exception:
+            return True
 
     async def search_platform_documentation(self) -> List[Dict[str, Any]]:
         """
         Executes a multi-query concurrent search across the platform knowledge base.
-        Filters out low-relevance results and removes duplicates across queries.
         """
         try:
             if not self.queries:
                 return []
 
-            # 1. Create asynchronous tasks using the instance level query config
             tasks = [
                 self.vector_db.query(
                     collection_name="platform_knowledge",
@@ -46,10 +75,7 @@ class Aquire:
                 for query in self.queries
             ]
 
-            # 2. Fire all queries simultaneously
             results_lists = await asyncio.gather(*tasks)
-
-            # 3. Process, clean, deduplicate, and score-filter results
             seen_ids = set()
             unified_results = []
 
@@ -58,13 +84,7 @@ class Aquire:
                     doc_id = item["id"]
                     score = item["score"]
 
-                    # Skip if we already captured this piece from a previous query variant
-                    if doc_id in seen_ids:
-                        continue
-
-                    # ChromaDB distance filter check
-                    if score > self.DISTANCE_THRESHOLD:
-                        logger.info(f"[Aquire] Dropped chunk {doc_id} due to weak relevance score: {score}")
+                    if doc_id in seen_ids or score > self.DISTANCE_THRESHOLD:
                         continue
 
                     seen_ids.add(doc_id)
@@ -76,18 +96,55 @@ class Aquire:
                         "score": score
                     })
 
-            # Sort combined hits so the most relevant pieces sit right at the top
             unified_results.sort(key=lambda x: x["score"])
             return unified_results
-
         except Exception as e:
             logger.error(f"❌ Error in Aquire platform search: {e}")
+            return []
+
+    async def search_user_bio(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves identity summaries and profile background stories for the contextual user email.
+        """
+        try:
+            if not self.queries:
+                return []
+
+            tasks = [
+                self.vector_db.query(
+                    collection_name="user_memories",
+                    query_text=query,
+                    limit=1,  # Biographies are unified singular profiles
+                    filters={"user_email": self.email}
+                )
+                for query in self.queries
+            ]
+
+            results_lists = await asyncio.gather(*tasks)
+            seen_ids = set()
+            unified_results = []
+
+            for raw_results in results_lists:
+                for item in raw_results:
+                    doc_id = item["id"]
+                    if doc_id in seen_ids or item["score"] > self.DISTANCE_THRESHOLD:
+                        continue
+
+                    seen_ids.add(doc_id)
+                    unified_results.append({
+                        "id": doc_id,
+                        "content": item["content"],
+                        "profession": item["metadata"].get("profession_tag"),
+                        "score": item["score"]
+                    })
+            return unified_results
+        except Exception as e:
+            logger.error(f"❌ Error in Aquire user bio search: {e}")
             return []
 
     async def search_user_assets(self) -> List[Dict[str, Any]]:
         """
         Executes a multi-query concurrent search across user file descriptions and properties.
-        Strictly isolated by user_email metadata filters to prevent overlap leakage.
         """
         try:
             if not self.queries:
@@ -98,13 +155,12 @@ class Aquire:
                     collection_name="user_assets",
                     query_text=query,
                     limit=self.limit_per_query,
-                    filters={"user_email": self.email}  # Strict runtime isolation lock
+                    filters={"user_email": self.email}
                 )
                 for query in self.queries
             ]
 
             results_lists = await asyncio.gather(*tasks)
-
             seen_ids = set()
             unified_results = []
 
@@ -112,35 +168,34 @@ class Aquire:
                 for item in raw_results:
                     doc_id = item["id"]
                     score = item["score"]
+                    metadata = item["metadata"]
 
-                    if doc_id in seen_ids:
+                    if doc_id in seen_ids or score > self.DISTANCE_THRESHOLD:
                         continue
 
-                    if score > self.DISTANCE_THRESHOLD:
-                        logger.info(f"[Aquire] Dropped user asset {doc_id} due to score: {score}")
+                    # Apply optional timeline cutoff evaluation
+                    if not self._is_within_timeframe(metadata):
                         continue
 
                     seen_ids.add(doc_id)
                     unified_results.append({
                         "id": doc_id,
-                        "file_name": item["metadata"].get("file_name", "unknown_file"),
-                        "file_type": item["metadata"].get("file_type", "unknown_type"),
-                        "session_id": item["metadata"].get("session_id"),
+                        "file_name": metadata.get("file_name", "unknown_file"),
+                        "file_type": metadata.get("file_type", "unknown_type"),
+                        "session_id": metadata.get("session_id"),
                         "content": item["content"],
                         "score": score
                     })
 
             unified_results.sort(key=lambda x: x["score"])
             return unified_results
-
         except Exception as e:
             logger.error(f"❌ Error in Aquire user assets search: {e}")
             return []
 
     async def search_user_history(self, target_type: str) -> List[Dict[str, Any]]:
         """
-        Queries the user_history collection. Can filter for 'chat_session_summary' or 'system_log_event'.
-        Uses combined dictionary filter matches to isolate account boundaries safely.
+        Queries the user_history collection for explicit sub-types ('chat_session_summary' or 'system_log_event').
         """
         try:
             if not self.queries:
@@ -162,7 +217,6 @@ class Aquire:
             ]
 
             results_lists = await asyncio.gather(*tasks)
-
             seen_ids = set()
             unified_results = []
 
@@ -170,33 +224,32 @@ class Aquire:
                 for item in raw_results:
                     doc_id = item["id"]
                     score = item["score"]
+                    metadata = item["metadata"]
 
-                    if doc_id in seen_ids:
+                    if doc_id in seen_ids or score > self.DISTANCE_THRESHOLD:
                         continue
 
-                    if score > self.DISTANCE_THRESHOLD:
+                    # Apply optional timeline cutoff evaluation
+                    if not self._is_within_timeframe(metadata):
                         continue
 
                     seen_ids.add(doc_id)
                     
-                    # Construct generic payload mapping info
                     payload = {
                         "id": doc_id,
-                        "session_id": item["metadata"].get("session_id"),
+                        "session_id": metadata.get("session_id"),
                         "content": item["content"],
                         "score": score
                     }
                     
-                    # Include event-specific metadata if tracing system log metrics
                     if target_type == "system_log_event":
-                        payload["event_type"] = item["metadata"].get("event_type")
-                        payload["logged_at"] = item["metadata"].get("logged_at")
+                        payload["event_type"] = metadata.get("event_type")
+                        payload["logged_at"] = metadata.get("logged_at")
 
                     unified_results.append(payload)
 
             unified_results.sort(key=lambda x: x["score"])
             return unified_results
-
         except Exception as e:
             logger.error(f"❌ Error in Aquire history search for {target_type}: {e}")
             return []
@@ -204,22 +257,29 @@ class Aquire:
     async def execute(self) -> Dict[str, Any]:
         """
         Main execution entry point for data collection.
-        Directs query flows based on the class-level target scope.
+        Routes lookups cleanly across multiple targets or all scopes.
         """
         results = {}
+        s = self.scopes
 
-        # 1. Evaluate Global Platform Guidelines Request
-        if self.target_scope in ["platform", "all"]:
+        # 1. Global Platform System Docs
+        if "all" in s or "platform" in s:
             results["platform_docs"] = await self.search_platform_documentation()
+
+        # 2. User Bio & Preferences Narrative
+        if "all" in s or "bio" in s or "user_bio" in s:
+            results["user_bio"] = await self.search_user_bio()
             
-        # 2. Evaluate Personal Upload Asset Request
-        if self.target_scope in ["files", "user_files", "all"]:
+        # 3. User Upload Code/File Assets
+        if "all" in s or "files" in s or "user_files" in s:
             results["user_files"] = await self.search_user_assets()
             
-        # 3. Evaluate Session Chat Summaries and Audit Logs Request
-        if self.target_scope in ["logs", "user_logs", "chats", "all"]:
-            # Route execution logic down the shared user_history vector container space
-            results["chat_sessions"] = await self.search_user_history("chat_session_summary")
+        # 4. User System Configuration/Error Logs
+        if "all" in s or "logs" in s or "user_logs" in s:
             results["system_logs"] = await self.search_user_history("system_log_event")
+
+        # 5. User Historical Chats
+        if "all" in s or "chats" in s or "chat_sessions" in s:
+            results["chat_sessions"] = await self.search_user_history("chat_session_summary")
 
         return results

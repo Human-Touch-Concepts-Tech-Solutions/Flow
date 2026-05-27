@@ -351,15 +351,24 @@ class Monitor:
             print(f"❌ Monitor Chat Watcher Error: {e}")
 
     async def watch_system_logs(self):
-        """Live watch for background application logging events."""
+        """Live watch for background application logging events, updates, and overrides."""
         try:
-            async with self.db["system_logs"].watch() as stream:
+            # Crucial: full_document="updateLookup" forces MongoDB to send the 
+            # updated doc snapshot back during an 'update' event.
+            async with self.db["system_logs"].watch(full_document="updateLookup") as stream:
                 async for change in stream:
-                    if change["operationType"] in ["insert"]:
+                    # 1. Expand operations to capture updates and replacements
+                    if change["operationType"] in ["insert", "update", "replace"]:
                         doc_id = change["documentKey"]["_id"]
-                        updated_doc = await self.db["system_logs"].find_one({"_id": doc_id})
+                        
+                        # 2. Grab the full document snapshot from the stream event or fall back to a manual query
+                        updated_doc = change.get("fullDocument") or await self.db["system_logs"].find_one({"_id": doc_id})
+                        
                         if updated_doc:
+                            # 3. Stream changes straight down to your existing vector pipeline tool
                             await self._sync_system_log_to_vector_db(updated_doc)
+                            print(f"[Monitor] ⚡ System Log synced ({change['operationType']}): ID {doc_id}")
+                            
         except Exception as e:
             print(f"❌ Monitor System Log Watcher Error: {e}")
 
@@ -463,6 +472,80 @@ class Monitor:
 
         except Exception as e:
             print(f"❌ Error during Platform Documentation Vector Sync: {e}")
+    
+
+    #  sync and moitor for external knowledge bases and api changes 
+    # can be added here in the future as well following the same pattern of deterministic
+    #  upserts and structured metadata tagging for optimal retrieval and maintenance.
+
+    async def watch_external_knowledge(self):
+        """Live watch stream monitoring incoming web parsing payloads from scrapers."""
+        try:
+            # updateLookup handles direct edits, while inserts catch incoming streaming data
+            async with self.db["external_knowledge"].watch(full_document="updateLookup") as stream:
+                async for change in stream:
+                    if change["operationType"] in ["insert", "update", "replace"]:
+                        doc_id = change["documentKey"]["_id"]
+                        updated_doc = change.get("fullDocument") or await self.db["external_knowledge"].find_one({"_id": doc_id})
+                        
+                        if updated_doc:
+                            await self._sync_external_knowledge_to_vector_db(updated_doc)
+        except Exception as e:
+            print(f"❌ Monitor External Knowledge Watcher Error: {e}")
+
+    async def _sync_external_knowledge_to_vector_db(self, doc: Dict):
+        """
+        Takes raw multi-page scraper dumps, formats structural index anchors,
+        chunks long-form articles cleanly, and saves to the vector space.
+        """
+        try:
+            doc_id = str(doc.get("_id"))
+            url = doc.get("url", "unknown_source")
+            domain = doc.get("domain", "unknown_domain")
+            title = doc.get("title", "Untitled Scraped Resource")
+            raw_content = doc.get("raw_content", "")
+
+            if not raw_content:
+                print(f"[Monitor] ⚠️ Skipping external sync for '{title}': Raw content is empty.")
+                return
+
+            # Format structural markdown header for vector alignment
+            structured_narrative = (
+                f"Source Resource URL: {url}\n"
+                f"Domain Platform: {domain}\n"
+                f"Page Title Context: {title}\n"
+                f"--- WEBPAGE SECTION EXTRACT ---\n"
+                f"{raw_content}"
+            )
+
+            # Split large HTML layouts into searchable blocks
+            chunks = self.vector_db.chunk_text(structured_narrative, chunk_size=600, overlap=60)
+
+            success_count = 0
+            for i, chunk_text in enumerate(chunks):
+                # Generates a clear chunk identification key to prevent duplicate vectors
+                deterministic_chunk_id = f"web_{doc_id}_chunk_{i}"
+
+                success = await self.vector_db.upsert(
+                    collection_name="internet_knowledge", # Dedicated global web namespace
+                    content=chunk_text,
+                    doc_id=deterministic_chunk_id,
+                    metadata={
+                        "doc_origin_id": doc_id,
+                        "type": "external_web_knowledge",
+                        "source_url": url,
+                        "domain": domain,
+                        "title": title,
+                        "chunk_index": i,
+                        "last_sync_utc": datetime.now(timezone.utc).isoformat()
+                    }
+                )
+                if success:
+                    success_count += 1
+
+            print(f"🌐 Vector Internet Cache: Cached '{title}' ({success_count}/{len(chunks)} chunks mapped)")
+        except Exception as e:
+            print(f"❌ Error during External Knowledge Vector Sync: {e}")
 
 
 
@@ -480,7 +563,7 @@ class Monitor:
         asyncio.create_task(self.watch_chat_sessions())
         asyncio.create_task(self.watch_system_logs())
         asyncio.create_task(self.watch_user_assets())
-
+        asyncio.create_task(self.watch_external_knowledge())
 
         
         self._ready.set() # Signal that we are ready

@@ -13,6 +13,7 @@ from app.agent.manager.registry import LocatePath
 from app.agent.manager.permission import Approval
 from app.agent.manager.executor import Execute
 from app.agent.tools.information.internal import Aquire
+from app.agent.tools.information.external import ExternalAquire
 
 
 
@@ -566,17 +567,19 @@ class FlowtruAgent:
             # approval = Approval(self.email)
             # credit_decision, credit_message = await approval.credit_check()
             # tool_decision, tool_message = await approval.tool_usage_check()
-            search_tool = Aquire(
-                vector_db= self.vector_manager, 
-                email=self.email, 
-                target_scope="user_logs",
-                queries=[
-                "User logged in successfully with email and password",
-                "FastAPI database validator updated" 
-            ],
-                limit_per_query=5
+            # 1. Prepare your array of semantic queries
+            queries_to_search = ["FastAPI", "Python (programming language)"]
 
-                )
+            # 2. Pass the required dependencies into the initializer
+            search_tool = ExternalAquire(
+                vector_db=self.vector_manager,  # Replace with where your VectorManager lives
+                db_access=self.access,  # Your DatabaseAccess instance
+                queries=queries_to_search,
+                max_results=3,                           # Optional: defaults to 4
+                bypass_cache=False                       # Optional: set to True for real-time news forced lookup
+            )
+
+            # 3. Execute the pipeline
             context_payload = await search_tool.execute()
 
             print(f"Search Tool Result: {context_payload}")
