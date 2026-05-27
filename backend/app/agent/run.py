@@ -11,6 +11,9 @@ from app.agent.manager.time import TimeManager
 from app.agent.Accessibility.vectordatabase import VectorManager
 from app.agent.manager.registry import LocatePath
 from app.agent.manager.permission import Approval
+from app.agent.manager.executor import Execute
+from app.agent.tools.information.internal import Aquire
+
 
 
 
@@ -285,7 +288,7 @@ class FlowtruAgent:
                 if len(selected_tool_names) >= 5:
                     break
 
-        print(f"Final Tool Selection: {selected_tool_names}")
+        # print(f"Final Tool Selection: {selected_tool_names}")
         return selected_tool_names
 
             
@@ -334,7 +337,8 @@ class FlowtruAgent:
             
         
         available_tools = "\n\n".join(prompt_segments)
-        file_attachments = "\n".join(files)
+        # print(f"full available tools: {available_tools}")
+        file_attachments = "\n".join(files) 
 
     
     
@@ -365,6 +369,7 @@ class FlowtruAgent:
  
                 ## AVAILABLE TOOLS:
                 {available_tools}
+                
 
                 ## INTENT OPTIONS:
                 1. GREETING: Use this for "Hi", "Hello", "Good morning", "Hey", "how far"etc.
@@ -397,11 +402,14 @@ class FlowtruAgent:
                     "tone": provide a tone to use based on the users input (e.g., formal, casual, technical),
                     "language": give the detected language if it's not English, otherwise return "English",
                     "about": specify if the user input is related to "company_info" , "user_info", or "other". This will help the backend to know where to look for the information.,
-                    "selected_tools": ["tool_name"] | false | "Nill",
-                    "research_queries": "Analyze the user's intent. If the topic requires up-to-date information, technical specifics, or data the LLM might not have in its static training (e.g., latest software versions, current events, or deep-dive technical specs), generate an array of at least 5 targeted search queries and at most 8 . These queries should cover at least 90% of the scope needed to provide a professional, expert-level answer. If no external research is needed (e.g., 'write a story'), return an empty array [].",
+                    "selected_tools": by default the main to for this intent is info_search so provide also provide the module best for it  eg ["tool_name": "tool_module"] | false | "Nill",
+                    
+                    "research_queries": "Analyze the user's intent. If the topic requires up-to-date information, technical specifics, or data the LLM might not have in its static training (e.g., latest software versions, current events, or deep-dive technical specs), generate an array of at least 8 targeted search queries and at most 15 . These queries should cover at least 90% of the scope needed to provide a professional, expert-level answer. If no external research is needed (e.g., 'write a story'), return an empty array [].",
                     "prompt": "Write a high-quality, professional system prompt starting with 'You are...'. It must be written in the first person as if talking directly to the LLM that will execute it. Include a specific persona, a detailed step-by-step methodology, and strict output constraints. Do not provide commentary; only output the final prompt text here.",
-                   
-
+                    "token_allocation": "Based on the complexity of the user's request and the depth of information needed, provide a token allocation recommendation for the execution layer. For example, if the user is asking for a simple fact, you might allocate lower amount of tokens. If they are asking for an in-depth analysis with multiple steps, you might allocate higher amount of tokens. This helps ensure that the execution layer has enough resources to generate a complete and accurate response without running out of tokens prematurely. the max tokens to allocate is 1500."
+                    "quick_reply": "Act as a strict, professional system coordinator. Evaluate if the user's intent is too vague to resolve to a specific database asset or action. If crucial context is missing, write a single, highly precise markdown sentence inviting the user to provide clarification. Frame it as a helpful question. You are ONLY allowed to ask for: 1. Specific file names or file extensions, 2. A more specific date/time window, 3. The specific tool action they intended to perform. DO NOT speculate about edge cases like other users, locations, or devices. Focus entirely on parameters that narrow down database search results. Example: 'To find the exact files you uploaded last week, could you please specify the **file names** or their **file extensions** (e.g., .pdf, .jpeg)?'. If the input is already sufficient to run an initial query or search, return an empty string \"\".",
+               
+                 }}
                 If intent is FUNCTIONAL_TASK:
                 {{
                     "intent": "FUNCTIONAL_TASK",
@@ -411,7 +419,7 @@ class FlowtruAgent:
                     "about": specify if the user input is related to "company_info" or "user_info". This will help the backend to know where to look for the information.,
                     "selected_tools": ["tool_name":"provide the module based on the tool selected best suited for the task"] | false | "Nill",
                     "prompt": "Write the 'You are...' system prompt as a 'Final Task Executor.' It should assume that all necessary details from the 'quick_reply' phase have already been provided. Instead of telling the LLM to 'gather' or 'prompt' for info, instruct it to 'use the provided data' to build the final output. The instructions should focus entirely on formatting, tone, and the final structure of the result (e.g., 'Generate the receipt using the following data...')."
-                    "quick_reply": "Act as a professional consultant. If more detail is needed to reach 99% accuracy, write a brief, polite sentence in markdown that invites the user to provide the missing specifics. Frame it as a helpful question (e.g., 'To make this perfect, could you please provide...'). Use bolding for the key items. If the user's input is already perfect, return an empty string \"\"."
+                    "quick_reply": "Act as a professional consultant. If more detail is needed to reach 99% accuracy, write a brief, polite sentence in markdown that invites the user to provide the missing specifics. Frame it as a helpful question (e.g., 'To make this perfect, could you please provide...'). Use bolding for the key items. make sure it is related to the user and dont assume another users in relation to your answer. If the user's input is already perfect, return an empty string \"\"."
                 }}
 
                  If intent is AUTOMATION_SCHEDULER:
@@ -506,38 +514,97 @@ class FlowtruAgent:
         try:
             #users chats and logs for current day or current session,
             session_data = await self._sync_state()
-
-            #registry aspect
-            # This would be dynamically determined based on the user's request
+            # converting  users email to a safe format for file naming
             safe_email = self.email.replace("@", "_").replace(".", "_")
-            locator = LocatePath(user_id=safe_email)
-            resolution_result = await locator.prepare_workspace()
-            print("Registry Resolution Result:", resolution_result)
-           # registry logic works good 
-           # permission aspect
-            approval = Approval(self.email)
-            credit_decision, credit_message = await approval.credit_check()
-            tool_decision, tool_message = await approval.tool_usage_check()
-            
 
-
-            # fitering tools based on user input and user file 
-            # to get the most relevant ones for the current request
+            # tools filtering based on users inout and file attachments if exist, 
             tools_context = await self.get_relevant_tools(text, files)
+
+            # ====== credit and permission  might be here
+            # ======    # ======       # ======
 
 
             # First layer Dispatcher: 
             # Analyzes user input and session context to determine orchestration strategy
             first_layer_prompt = await self.Dispatcher(text, session_data, tools_context , files)
-            
-            final_prompt = await self._build_prompt_stack(text, session_data, tools_context)
-            
             ai_reply = await self.ai_service.generate_response(first_layer_prompt)
 
-            rephrase = json.loads(ai_reply.strip().replace("```json", "").replace("```", "").strip()) # This is the JSON config that the Dispatcher returns to guide the next steps in the backend orchestration.
-        
+            # rephrasal layer: takes the raw AI output and transforms it into a structured format that the backend can easily parse for execution. It also extracts any critical insights or parameters needed for the next steps.
+            rephrase = json.loads(ai_reply.strip().replace("```json", "").replace("```", "").strip())
+
+            # test  print 
+            # print("DISPATCHER OUTPUT:", rephrase)
+
+            #conditional logic based on intents 
             if rephrase["intent"] == "GREETING":
-                 ai_reply = rephrase["reply"]
+                 ai_reply = rephrase["reply"].strip()
+            
+            elif rephrase["intent"] == "INFORMATION_REQUEST":
+                pass
+
+            # final_prompt = await self._build_prompt_stack(text, session_data, tools_context)
+            
+          
+
+           
+        
+           
+            
+
+
+
+
+
+            #registry aspect
+            # This would be dynamically determined based on the user's request
+            
+            # locator = LocatePath(user_id=safe_email)
+            # resolution_result = await locator.prepare_workspace()
+            
+           # registry logic works good 
+           # permission aspect
+            # approval = Approval(self.email)
+            # credit_decision, credit_message = await approval.credit_check()
+            # tool_decision, tool_message = await approval.tool_usage_check()
+            search_tool = Aquire(
+                vector_db= self.vector_manager, 
+                email=self.email, 
+                target_scope="user_logs",
+                queries=[
+                "User logged in successfully with email and password",
+                "FastAPI database validator updated" 
+            ],
+                limit_per_query=5
+
+                )
+            context_payload = await search_tool.execute()
+
+            print(f"Search Tool Result: {context_payload}")
+            #=================================================================
+            # order = {
+            #             "type": "single",
+            #             "action": [
+            #                 {
+            #                     "tool_name": "rename",
+            #                     "module": "create",
+            #                     "class_name": "CreateRename",
+            #                     "method": "rename_file",
+            #                     "parameters": {
+            #                         "file_name": "WhatsApp Image 2026-05-20 at 9.12.40 AM.jpeg",
+            #                         "new_name": "new name.jpeg"
+            #                     }
+            #                 }
+            #             ]
+            #         }
+            # tool_call = Execute(order=order, user_id=safe_email)
+            # result = await tool_call.run()
+            # print("Execution Result:", result)
+
+           
+            
+
+
+            
              # For greetings, we can directly use the reply from the Dispatcher without further processing.
             
           

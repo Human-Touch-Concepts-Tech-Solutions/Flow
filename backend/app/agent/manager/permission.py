@@ -1,4 +1,4 @@
-from typing import  Tuple
+from typing import  Tuple, Optional
 
 
 
@@ -6,10 +6,9 @@ from typing import  Tuple
 
 class Approval:
     
-    def __init__(self, user_email: str):
+    def __init__(self, user_email: str, tool_name: Optional[str] = None):
         self.user_email = user_email.strip() if user_email else None
-
-    
+        self.tool_name = tool_name
 
     async def credit_check(self) -> Tuple[bool, str]:
         """
