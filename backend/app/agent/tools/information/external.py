@@ -2,11 +2,12 @@ import asyncio
 import time
 import httpx
 import logging
+import re
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 from app.agent.Accessibility.vectordatabase import VectorManager
-from app.agent.Accessibility.database import DatabaseAccess  # Importing your provided database helper
+from app.agent.Accessibility.database import DatabaseAccess  # Preserved original import path
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class ExternalAquire:
                  bypass_cache: bool = False):
         """
         Orchestrates semantic data retrieval with a localized vector cache 
-        and external search fallbacks.
+        and high-speed non-blocking external search fallbacks.
         """
         self.vector_db = vector_db
         self.db = db_access
@@ -31,10 +32,13 @@ class ExternalAquire:
         self.CACHE_THRESHOLD = 0.7
 
     async def fetch_wikipedia_markdown(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Queries Wikipedia via OpenSearch, filters targets, and pulls massive, 
+        complete page text structures using the full Action Parse engine.
+        """
         results = []
         search_url = "https://en.wikipedia.org/w/api.php"
         
-        # 1. Correctly define parameters used for the initial keyword search query phase
         search_params = {
             "action": "opensearch",
             "search": query,
@@ -59,45 +63,50 @@ class ExternalAquire:
                 titles, links = search_data[1], search_data[3]
                 
                 for title, url in zip(titles, links):
-                    # Step 2: Fetch the plain-text layout data with optimized max-length targets
-                    content_url = "https://en.wikipedia.org/w/api.php"
-                    content_params = {
-                        "action": "query",
-                        "prop": "extracts",
-                        "exintro": False,      # Pull comprehensive article body context
-                        "explaintext": True,   # Convert HTML output layout to clean raw strings
-                        "exlimit": "max",      # Pull maximum allowed paragraph data sections
-                        "titles": title,
+                    # 🛠️ Defensive Validation Filter: Stop unrelated semantic drift (e.g., 'Fast & Furious')
+                    clean_query = query.lower()
+                    if "fastapi" in clean_query and "fastapi" not in title.lower():
+                        print(f"⏩ Skipping irrelevant Wikipedia match: '{title}' found for query '{query}'")
+                        continue
+                    
+                    # Step 2: Fetch the HUGE complete wikitext layout using the official Parse engine
+                    parse_url = "https://en.wikipedia.org/w/api.php"
+                    parse_params = {
+                        "action": "parse",
+                        "page": title,
+                        "prop": "wikitext",
                         "format": "json"
                     }
                     
-                    content_res = await client.get(content_url, params=content_params, timeout=6.0)
-                    if content_res.status_code != 200:
+                    parse_res = await client.get(parse_url, params=parse_params, timeout=8.0)
+                    if parse_res.status_code != 200:
                         continue
                         
-                    pages = content_res.json().get("query", {}).get("pages", {})
-                    raw_text = ""
-                    for page_id, page_data in pages.items():
-                        if "extract" in page_data:
-                            raw_text = page_data["extract"]
-                            break
-                    
-                    if not raw_text.strip():
+                    raw_wikitext = parse_res.json().get("parse", {}).get("wikitext", {}).get("*", "")
+                    if not raw_wikitext.strip():
                         continue
                     
-                    # Step 3: Refine standard output into readable Markdown sections
+                    # Step 3: Parse macro layout string directly into clean structural Markdown
                     markdown_content = f"# {title}\n\n"
-                    lines = raw_text.split("\n")
+                    lines = raw_wikitext.split("\n")
+                    
                     for line in lines:
                         line = line.strip()
-                        if not line:
+                        # Discard raw categories, metadata macros, and template definitions
+                        if not line or line.startswith("[[Category:") or line.startswith("{{") or line.endswith("}}"):
                             continue
+                        
+                        # Translate heading layers cleanly
                         if line.startswith("==") and line.endswith("=="):
                             heading_level = line.count("=") // 2
                             heading_name = line.replace("=", "").strip()
                             markdown_content += f"\n{'#' * (heading_level + 1)} {heading_name}\n"
                         else:
-                            markdown_content += f"{line}\n"
+                            # Strip nested MediaWiki citation syntax blocks for cleaner context parsing
+                            clean_line = re.sub(r'\{\{[Cc]ite.*?\}\}', '', line)
+                            clean_line = re.sub(r'\[\[(?:[^|\]]*\|)?([^\]]+)\]\]', r'\1', clean_line)
+                            if clean_line.strip():
+                                markdown_content += f"{clean_line.strip()}\n"
                     
                     response_time = int((time.perf_counter() - start_time) * 1000)
                     
@@ -105,7 +114,7 @@ class ExternalAquire:
                         "url": url,
                         "domain": "en.wikipedia.org",
                         "title": title,
-                        "raw_content": markdown_content.strip(),
+                        "raw_content": markdown_content[:50000].strip(),  # Context ceiling buffer protection
                         "metadata": {
                             "scraped_by": "custom_scraper",
                             "response_time_ms": response_time,
@@ -132,7 +141,6 @@ class ExternalAquire:
             
             valid_results = []
             for hit in hits:
-                # Strict distance verification pass (0.0 to 0.7 check)
                 if hit.get("score", 2.0) <= self.CACHE_THRESHOLD:
                     meta = hit.get("metadata", {})
                     valid_results.append({
@@ -141,7 +149,7 @@ class ExternalAquire:
                         "title": meta.get("title"),
                         "raw_content": hit.get("content"),
                         "metadata": {
-                            "scraped_by": meta.get("type", "external_web_knowledge"),
+                            "scraped_by": "internal_vector_cache",
                             "last_sync": meta.get("last_sync_utc")
                         },
                         "created_at_utc": meta.get("last_sync_utc"),
@@ -152,10 +160,21 @@ class ExternalAquire:
             logger.warning(f"Vector Store lookup skipped: {e}")
             return []
 
+    async def _background_db_commit(self, documents: List[Dict[str, Any]]):
+        """Asynchronously writes freshly acquired content to MongoDB without halting request lifecycles."""
+        for doc in documents:
+            try:
+                # Re-label origin tag so cache checks recognize it correctly later
+                doc["metadata"]["scraped_by"] = "external_web_knowledge"
+                await self.db.add_one(collection="external_knowledge", data=doc)
+            except Exception as e:
+                logger.error(f"Failed background commit for document {doc.get('title')}: {e}")
+        print(f"⚡ Background Task: {len(documents)} documents successfully saved to MongoDB and syncing to Vector DB!")
+
     async def execute(self) -> List[Dict[str, Any]]:
         """
-        Controls coordination loop across local caches, handles write fallbacks to MongoDB,
-        waits out streaming updates, and ensures results are aggregated by timestamp.
+        Coordinates cache validation and triggers instant concurrent web retrieval 
+        on cache misses with write-through tracking.
         """
         if not self.queries:
             return []
@@ -177,11 +196,11 @@ class ExternalAquire:
                     print(f"🔍 Vector Cache Miss for query: '{query}'. Appending to web search queue.")
                     pending_external_searches.append(query)
 
-        # Step 2: Fetch Missing Queries externally and commit them to MongoDB
+        # Step 2: Fetch Missing Queries externally and instantly append to return payloads
         if pending_external_searches:
             newly_scraped_payloads = []
             
-            # Gather search inputs concurrently
+            # Gather search inputs concurrently across the live network
             search_tasks = [self.fetch_wikipedia_markdown(q) for q in pending_external_searches]
             completed_searches = await asyncio.gather(*search_tasks)
             
@@ -189,22 +208,13 @@ class ExternalAquire:
                 newly_scraped_payloads.extend(results_list)
 
             if newly_scraped_payloads:
-                print(f"💾 Inserting {len(newly_scraped_payloads)} fresh scraped documents into MongoDB...")
-                for doc in newly_scraped_payloads:
-                    # Write to collection, triggering background streaming tasks in Monitor automatically
-                    await self.db.add_one(collection="external_knowledge", data=doc)
+                # Write directly to the output array so the user receives the data instantly
+                final_aggregated_results.extend(newly_scraped_payloads)
                 
-                # Step 3: Wait window loop to ensure change stream processing loops finish updates
-                wait_seconds = 3.5
-                print(f"⏳ Sleeping for {wait_seconds}s to allow background Monitor Vector synchronization to complete...")
-                await asyncio.sleep(wait_seconds)
+                # Hand data over to the non-blocking fire-and-forget background task
+                asyncio.create_task(self._background_db_commit(newly_scraped_payloads))
 
-                # Step 4: Final Vector pass loop targeting queries that missed previously
-                for query in pending_external_searches:
-                    fresh_vector_hits = await self._query_vector_store(query)
-                    final_aggregated_results.extend(fresh_vector_hits)
-
-        # Step 5: Deduplicate elements by URL
+        # Step 3: Deduplicate elements by URL
         seen_urls = set()
         deduplicated_results = []
         for doc in final_aggregated_results:
@@ -213,7 +223,7 @@ class ExternalAquire:
                 seen_urls.add(url)
                 deduplicated_results.append(doc)
 
-        # Step 6: Final Sort Pass: Bubble newest entries to top using 'created_at_utc' timestamps
+        # Step 4: Sort Pass: Newest entries bubble to top using 'created_at_utc' timestamps
         try:
             deduplicated_results.sort(
                 key=lambda x: x.get("created_at_utc", "1970-01-01T00:00:00Z"), 

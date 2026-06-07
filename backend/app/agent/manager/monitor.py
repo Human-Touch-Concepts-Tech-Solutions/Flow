@@ -304,8 +304,21 @@ class Monitor:
             
             credits_data = user_doc.get("credits", {})
             balance = credits_data.get("balance", 0)
+            preferences = user_doc.get("preferences", []) or user_doc.get("perferences", [])
+
+            # 🌟 FIX: Ensure preferences is actually a list, not a raw string
+            if isinstance(preferences, str):
+                # If it's a string, split it by commas or wrap it in a list so it doesn't loop letters
+                preferences = [preferences] if preferences.strip() else []
+
+            if preferences and isinstance(preferences, list):
+                # Strip whitespace and ignore any empty string entries in the array
+                preferences_text = " ".join([f"They prefer or like: {str(p).strip()}." for p in preferences if str(p).strip()])
+            else:
+                preferences_text = "No explicit system or behavioral preferences have been configured yet."
 
             # 2. Construct the Storytelling Profile Narrative Block
+           
             profile_narrative = (
                 f"User Profile Anchor Summary:\n"
                 f"This foundational identity data belongs to the platform user {full_name}. "
@@ -314,6 +327,8 @@ class Monitor:
                 f"Their primary verified contact channel is {email}. "
                 f"Account Metadata: They are currently positioned on the {plan} subscription tier, "
                 f"with their account status marked as {status}. Their active operational utility credit balance is {balance} units."
+                f"User Behavioral and System Preferences:\n"
+                f"{preferences_text}"
             )
 
             # 3. Upsert cleanly into the master user_memories space using metadata isolation keys

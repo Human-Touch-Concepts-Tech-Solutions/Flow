@@ -4,18 +4,34 @@ import shutil
 import importlib
 import asyncio
 from typing import Dict, Any
+from fastapi import Request
 from app.agent.manager.permission import Approval
 from app.agent.manager.registry import LocatePath
+from app.agent.Accessibility.database import DatabaseAccess
+from app.agent.Accessibility.vectordatabase import VectorManager
 
 class Execute:
-    def __init__(self, order: Dict[str, Any], user_id: str):
+    def __init__(
+            self, 
+            order: Dict[str, Any], 
+            user_id: str, 
+            data_state: Any, 
+            db_instance: Any, 
+            vector_manager: VectorManager,
+            ):
         """
         Initializes the Core Execution Engine with the target order context.
         :param order: The parsed JSON dictionary instruction layout from the LLM.
         :param user_id: The unique sanitized identifier/email of the active user.
+        :param data_state: The current state of the data environment.
+        :param db_instance: An instance of the database access layer.
+        :param vector_manager: An instance of the vector database manager.
         """
         self.order = order
         self.user_id = user_id.strip() if user_id else None
+        self.data_state = data_state
+        self.access = DatabaseAccess(db_instance)
+        self.vector_manager = vector_manager
 
     async def run(self) -> Dict[str, Any]:
         """
@@ -35,7 +51,7 @@ class Execute:
             "message": f"Execution rejected: The payload type system mapping '{order_type}' is unhandled."
         }
 
-    async def _execute_single_order(self) -> Dict[str, Any]:
+    async def _execute_single_order(self, request: Request =None ) -> Dict[str, Any]:
         """
         Internal isolation handler tasked with navigating permissions, path resolutions, 
         and runtime evaluation for self-contained, single-process operations.
@@ -46,7 +62,8 @@ class Execute:
 
         action_data = actions[0]
         tool_name = action_data.get("tool_name")
-        module_name = action_data.get("module")
+        raw_module_name = action_data.get("module")
+        module_name =  raw_module_name.replace(".py", "") if raw_module_name else None
         class_name = action_data.get("class_name")
         method_name = action_data.get("method")
         raw_parameters = action_data.get("parameters", {})
@@ -60,6 +77,9 @@ class Execute:
                 "status": "denied", 
                 "reason": f"Privilege Check Failed. Security feedback signature: {usage_msg}"
             }
+
+        # check for tool category 
+        
 
         # --- STEP 2: MULTI-ZONE PATH RESOLUTIONS FROM REGISTRY ---
         target_filename = raw_parameters.get("file_name")
@@ -76,20 +96,44 @@ class Execute:
             return {"status": "error", "message": f"Registry path mapping failed for tool: {tool_res['message']}"}
         tool_absolute_dir = tool_res["absolute_path"]
 
-        # --- STEP 3: CONSTRUCT PARAMETER MATRICES ---
+
+        
+        # check for tool category
+       
+        all_tools = self.data_state.tools
+        current_tool = next((tool for tool in all_tools if tool.get("tool_name") == tool_name), None)
+        
+        if not current_tool:
+            return {"status": "error", "message": f"Execution Aborted: Tool '{tool_name}' missing from platform data state config."}
+        
+        tool_category = current_tool.get("category", "text")
+
         processed_parameters = raw_parameters.copy()
 
-        # If a file context was specified, swap out its raw string name for its verified storage tracking path
-        if target_filename:
-            file_res = await locator.get_user_file_directory()
-            if file_res["status"] == "error":
-                return {"status": "error", "message": f"Registry resource track error: {file_res['message']}"}
+        if tool_category == "text":
+            # Inject structural system dependencies for engine execution context
+            if "vector_db" in processed_parameters:
+                processed_parameters["vector_db"] = self.vector_manager
+            if "db_access" in processed_parameters:
+                processed_parameters["db_access"] = self.access
+
+         
             
-            processed_parameters["file_path"] = file_res["absolute_path"]
-            
-            # Remove structural file_name key to prevent arguments mismatch errors on initialization
-            if "file_name" in processed_parameters:
-                del processed_parameters["file_name"]
+        elif tool_category == "file":
+            # --- STEP 3: CONSTRUCT PARAMETER MATRICES ---
+           
+
+            # If a file context was specified, swap out its raw string name for its verified storage tracking path
+            if target_filename:
+                file_res = await locator.get_user_file_directory()
+                if file_res["status"] == "error":
+                    return {"status": "error", "message": f"Registry resource track error: {file_res['message']}"}
+                
+                processed_parameters["file_path"] = file_res["absolute_path"]
+                
+                # Remove structural file_name key to prevent arguments mismatch errors on initialization
+                if "file_name" in processed_parameters:
+                    del processed_parameters["file_name"]
 
         # --- STEP 4: DYNAMIC CODE LOADING ---
         try:
@@ -98,7 +142,7 @@ class Execute:
 
             target_module = importlib.import_module(module_name)
         except ModuleNotFoundError as mnf_err:
-            return {"status": "error", "message": f"Execution Aborted: The system module file '{module_name}.py' could not be found. {str(mnf_err)}"}
+            return {"status": "error", "message": f"Execution Aborted: The system module file '{module_name}' could not be found. {str(mnf_err)}"}
 
         # --- STEP 5: STRUCTURAL ENTRY EXTRACTION ---
         try:
@@ -110,17 +154,16 @@ class Execute:
 
         # --- STEP 6: RUNTIME PROCESS INVOCATION & POST-PROCESSING ---
         try:
-            # Fire the tool
+            # Fire the tool method interface
             tool_response = await execution_method()
 
-            # If the tool succeeded and returned an output file path, the executor handles workspace placement
-            if tool_response.get("status") == "success" and "output_file_path" in tool_response:
+            # 🌟 CONDITIONALLY HANDLE FILE WORKSPACES ONLY FOR 'FILE' CATEGORIES
+            if tool_category == "file" and tool_response.get("status") == "success" and "output_file_path" in tool_response:
                 generated_file = tool_response["output_file_path"]
                 
                 if not os.path.exists(generated_file):
                     return {"status": "error", "message": f"Tool claimed success, but file was not found at: {generated_file}"}
 
-                # Ask registry to fetch/verify the workspace path context
                 workspace_res = await locator.prepare_workspace()
                 if workspace_res["status"] == "error":
                     return {"status": "error", "message": f"Workspace preparation failed: {workspace_res['message']}"}
@@ -128,17 +171,15 @@ class Execute:
                 workspace_dir = workspace_res["workspace_path"]
                 destination_path = os.path.join(workspace_dir, os.path.basename(generated_file))
 
-                # Handle the file move operation safely within a worker thread
                 def move_file():
                     if os.path.abspath(generated_file) != os.path.abspath(destination_path):
                         shutil.move(generated_file, destination_path)
                     return destination_path
 
                 final_saved_path = await asyncio.to_thread(move_file)
-                
-                # Update the final tool response with our structured tracking path
                 tool_response["saved_workspace_path"] = final_saved_path
 
+            # Return cleanly formatted uniform payload back to orchestration layer
             return {
                 "status": "success",
                 "execution_signature": f"{tool_name}.{module_name}.{method_name}",
@@ -146,4 +187,4 @@ class Execute:
             }
 
         except Exception as runtime_fault:
-            return {"status": "error", "message": f"Runtime exception intercepted within external file thread processing: {str(runtime_fault)}"}
+            return {"status": "error", "message": f"Runtime exception intercepted within tool processing thread: {str(runtime_fault)}"}

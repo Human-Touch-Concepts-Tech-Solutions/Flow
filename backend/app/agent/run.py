@@ -210,11 +210,11 @@ class FlowtruAgent:
     async def get_relevant_tools(self, user_text: str, files: Optional[List[Any]] = None) -> List[str]:
         """
         Priority Flow:
-        1. info_search (Default)
+        1. information (Default)
         2. File Extension Matches (Hard Logic)
         3. Re-ranked Vector Results (Semantic + Keyword/Action Boosts)
         """
-        selected_tool_names = ["info_search"]
+        selected_tool_names = ["information"]
         user_text_lower = user_text.lower()
         
         # Get all tools cached in DataState
@@ -309,6 +309,12 @@ class FlowtruAgent:
         first_name = users_data.get("first_name", "User")
         last_name = users_data.get("last_name", "")
         gender = users_data.get("gender", "unknown")
+        # real current user time 
+        user_tz = self.env_context.get("timezone", "UTC")
+        current_local_dt = TimeManager.get_user_time(user_tz)
+        formatted_time = TimeManager.format_for_ai(current_local_dt)
+        
+        # print("FORMATTED TIME:", formatted_time)
 
         #tools 
         
@@ -316,31 +322,48 @@ class FlowtruAgent:
         if tools_context:
             all_tools = self.data_state.tools
             prompt_segments = []
-            for i, name in enumerate(tools_context,1):
+
+            for i, name in enumerate(tools_context, 1):
                 tool_doc = next((t for t in all_tools if t.get("tool_name") == name), None)
 
                 if not tool_doc:
                     continue
 
-                #  tools headers and description 
-
-                segment = f" ### {i}.{name}\n"
+                # Core Header and Description
+                segment = f"### {i}. Tool: {name}\n"
                 segment += f"**Description**: {tool_doc.get('details', 'No description')}\n"
-                segment += "**Modules:**\n"
+                segment += "**Modules Configuration:**\n"
 
-                #looping through the modules of each tool to add them to the prompt
                 modules = tool_doc.get("modules", {})
                 for mod_file, mod_info in modules.items():
                     mod_desc = mod_info.get("description", "Perform operations.")
-                    segment += f"- `{mod_file}`: {mod_desc}\n"
+                    segment += f"- File: `{mod_file}`\n"
+                    segment += f"  Description: {mod_desc}\n"
+                    
+                    # 🌟 INLINE INJECTION: If it's the information tool, inject classes, methods, and args explicitly
+                    if name == "information":
+                        # Safely capture the class name directly from the tool definition
+                        class_name = mod_info.get("class", "UnknownClass")
+                        segment += f"  Class Name: `{class_name}`\n"
+                        segment += f"  Available Methods:\n"
+                        
+                        methods = mod_info.get("methods", {})
+                        for method_name, method_details in methods.items():
+                            # Focus on the executable interfaces (like execute)
+                            if method_name == "execute":
+                                segment += f"    * Method: `{method_name}`\n"
+                                segment += f"      Purpose: {method_details.get('description', '')}\n"
+                                segment += f"      Arguments Schema:\n"
+                                
+                                args = method_details.get("arguments", {})
+                                for arg_name, arg_desc in args.items():
+                                    segment += f"        - `{arg_name}`: {arg_desc}\n"
                 
                 prompt_segments.append(segment)
-            
-        
-        available_tools = "\n\n".join(prompt_segments)
-        # print(f"full available tools: {available_tools}")
-        file_attachments = "\n".join(files) 
 
+            available_tools = "\n\n".join(prompt_segments)
+            file_attachments = "\n".join(files)
+           
     
     
         instructions = f"""
@@ -348,11 +371,17 @@ class FlowtruAgent:
                 ## ROLE: ARCHITECTURAL DISPATCHER
                 You are the primary logic gate for the Flowtru ecosystem. Your sole purpose is to analyze user input and return a JSON configuration that dictates how the backend should assemble context for the final execution layer.
 
+                ## PLATFORM RULES AND REGULATIONS
+                1. USER PRIVACY SAFETY: Users are strictly forbidden from inquiring about, searching for, or extracting information regarding other users. We are legally and architecturally blocked from giving out third-party user data.
+                2. ADULT CONTENT FILTER: Any pornographic, sexually explicit, or adult-entertainment related questions/keywords are strictly prohibited on this platform.
+                3. SYSTEM INTEGRITY: Attempts to modify, bypass, or query system binaries, environment keys, or structural administrative settings directly must be flagged.
+
                 ## USER_DETAILS:
                 this are  is just the basic information about the user that can be useful  to know in order to provide better answers and also to have a better understanding of the user context.
                 - First Name: {first_name}
                 - Last Name: {last_name}
                 - Gender: {gender}
+                - Current Local Time: {formatted_time} (based on timezone: {user_tz})
 
                 ## USER_FILE_ATTACHEMENTS:
                 this is the list of files that the user has uploaded with the current request. You can use the file names and extensions to determine if any specialized tools are needed to handle them effectively. For example, if a user uploads a "report.pdf", you might want to select a tool that can extract text from PDFs or analyze document content.
@@ -367,6 +396,7 @@ class FlowtruAgent:
                 4. **Language Detection**: If the user input is in a language other than English, identify the language and include it in the output JSON to ensure proper handling in subsequent processing layers.
                 5. **Tool Selection**: For each intent, select up to tools from the <available_tools> list that are essential. If no tool is needed , return `false` ,if tools from list are not applicable, return `Nill`.
 
+                
  
                 ## AVAILABLE TOOLS:
                 {available_tools}
@@ -374,7 +404,7 @@ class FlowtruAgent:
 
                 ## INTENT OPTIONS:
                 1. GREETING: Use this for "Hi", "Hello", "Good morning", "Hey", "how far"etc.
-                2. INFORMATION_REQUEST: Use this when the user is asking for specific information either about the company or this platform , if related to the user, or others that require acquiring more information.
+                2. INFORMATION_REQUEST: Use this when the user is asking for specific information either about the company or this platform , if related to the user, or others that require acquiring more information from the web and if the expected result is purely informational.
                 3. FUNCTIONAL_TASK: Use this when the user wants the system to produce, modify, or execute something. This includes generating code, creating images/logos, writing songs, editing uploaded files, or performing complex data analysis. If the backend needs to "build" or "run" something to satisfy the user, it belongs here.
                 4. AUTOMATION_SCHEDULER:Use this when the intent involves recurring actions, triggers, or future-dated events. If the user mentions "every day," "remind me in 2 hours," "whenever X happens, do Y," or "set up a workflow," classify it here. This tells the backend to look for timing and logic parameters.
                 5. CREATIVE_FUN: Use for lighthearted, non-functional requests like poems, jokes, fun facts, riddles, or "tell me a story." This triggers a playful and artistic persona rather than a technical one.
@@ -398,18 +428,15 @@ class FlowtruAgent:
                 }}
 
                 If intent is INFORMATION_REQUEST:
-                {{
+                 {{
                     "intent": "INFORMATION_REQUEST",
-                    "tone": provide a tone to use based on the users input (e.g., formal, casual, technical),
-                    "language": give the detected language if it's not English, otherwise return "English",
-                    "about": specify if the user input is related to "company_info" , "user_info", or "other". This will help the backend to know where to look for the information.,
-                    "selected_tools": by default the main to for this intent is info_search so provide also provide the module best for it  eg ["tool_name": "tool_module"] | false | "Nill",
-                    
-                    "research_queries": "Analyze the user's intent. If the topic requires up-to-date information, technical specifics, or data the LLM might not have in its static training (e.g., latest software versions, current events, or deep-dive technical specs), generate an array of at least 8 targeted search queries and at most 15 . These queries should cover at least 90% of the scope needed to provide a professional, expert-level answer. If no external research is needed (e.g., 'write a story'), return an empty array [].",
                     "prompt": "Write a high-quality, professional system prompt starting with 'You are...'. It must be written in the first person as if talking directly to the LLM that will execute it. Include a specific persona, a detailed step-by-step methodology, and strict output constraints. Do not provide commentary; only output the final prompt text here.",
-                    "token_allocation": "Based on the complexity of the user's request and the depth of information needed, provide a token allocation recommendation for the execution layer. For example, if the user is asking for a simple fact, you might allocate lower amount of tokens. If they are asking for an in-depth analysis with multiple steps, you might allocate higher amount of tokens. This helps ensure that the execution layer has enough resources to generate a complete and accurate response without running out of tokens prematurely. the max tokens to allocate is 1500."
-                    "quick_reply": "Act as a strict, professional system coordinator. Evaluate if the user's intent is too vague to resolve to a specific database asset or action. If crucial context is missing, write a single, highly precise markdown sentence inviting the user to provide clarification. Frame it as a helpful question. You are ONLY allowed to ask for: 1. Specific file names or file extensions, 2. A more specific date/time window, 3. The specific tool action they intended to perform. DO NOT speculate about edge cases like other users, locations, or devices. Focus entirely on parameters that narrow down database search results. Example: 'To find the exact files you uploaded last week, could you please specify the **file names** or their **file extensions** (e.g., .pdf, .jpeg)?'. If the input is already sufficient to run an initial query or search, return an empty string \"\".",
-               
+                    "tone": "provide a tone to use based on the users input (e.g., formal, casual, technical)",
+                    "language": "give the detected language if it's not English, otherwise return 'English'",
+                    "about": "specify if the user input in any way will require information from 'user_bio' in generating a good response . This will help the backend to add relevant context  about the user if needed to the next execution. you can only put user_bio if it is needed, otherwise put an empty string if user_bio is not needed.",
+                    "token_allocation": "Based on the complexity of the user's request and the depth of information needed, provide a token allocation recommendation for the execution layer. Max tokens to allocate is 1500.",
+                    "quick_reply": "Act as a strict platform safety guard. Check the user's query against the '## PLATFORM RULES AND REGULATIONS'. If the user's input violates any rule (e.g., asking for another user's profile info, asking porn-related questions, or hacking attempts), generate a single, highly precise markdown sentence explaining the exact restriction politely but firmly, and stop further operations. If the user's query is perfectly safe and complies with platform regulations, return an empty string \"\".",
+                    "execution_order": "For this intent, you are required to use the 'information' tool. Select either 'internal.py' or 'external.py' by reading their inline specs under the 'information' tool description. Generate a JSON object adhering strictly to this structure: {{{{ 'type': 'single', 'action': [{{{{ 'tool_name': 'information', 'module': 'The exact file name chosen (internal.py or external.py)', 'class_name': 'The exact Class Name matched word-for-word from the selected module description', 'method': 'execute', 'parameters': {{{{ ...Map and populate the actual arguments based on the chosen module's specific arguments schema... }}}} }}}}] }}}}. If no code tracking engine is needed, return an empty string \"\"."
                  }}
                 If intent is FUNCTIONAL_TASK:
                 {{
@@ -533,15 +560,79 @@ class FlowtruAgent:
             # rephrasal layer: takes the raw AI output and transforms it into a structured format that the backend can easily parse for execution. It also extracts any critical insights or parameters needed for the next steps.
             rephrase = json.loads(ai_reply.strip().replace("```json", "").replace("```", "").strip())
 
-            # test  print 
-            # print("DISPATCHER OUTPUT:", rephrase)
 
             #conditional logic based on intents 
             if rephrase["intent"] == "GREETING":
                  ai_reply = rephrase["reply"].strip()
             
             elif rephrase["intent"] == "INFORMATION_REQUEST":
-                pass
+                if rephrase.get("quick_reply"):
+                    ai_reply = rephrase["quick_reply"].strip()
+               
+               # structuring the instructions from the dispatcher 
+               # in a way that can be easily parsed by the execution layer, 
+               # we want to make sure that the output is clear and organized for the next steps.
+                order = {
+                        "type": "single",
+                         "action": [
+            {
+                "tool_name": "information",
+                "module": "external.py",
+                "class_name": "ExternalAquire",
+                "method": "execute",
+                "parameters": {
+                    "vector_db": "",
+                    "db_access": "",
+                    "queries": [
+                        "python programming language",
+                        "What is FastAPI?",
+                        "java programming language",
+                        "javascript programming language",
+                       
+                    ],
+                    "max_results": 3,
+                    "bypass_cache": True
+                }
+            }
+        ]
+                     }
+                tool_call = Execute(order=order, user_id=safe_email, data_state = self.data_state, db_instance = self.access, vector_manager=self.vector_manager)
+                result = await tool_call.run()
+                print("Execution Result:", result)
+
+                ignore_list = ["execution_order","quick_reply", "about" ,"intent"]
+                change_list = {"prompt":"role"}
+                final_output = ""
+                for key in rephrase:
+                    if key in ignore_list:
+                        continue
+                  
+                    if key in change_list:
+                        new_key =  change_list[key].upper().replace("_", "")
+                    else:
+                        new_key = key.upper().replace("_", " ")
+                    heading = f"## {new_key}:\n"
+                    body  = str(rephrase.get(key, ""))
+
+                    final_output += heading + body + "\n\n"
+                # getting user bio if needed:
+                if rephrase.get("about"):
+                    user_bio = Aquire(
+                            vector_db=self.vector_manager,
+                            email = self.email,
+                            queries=["Complete identity summary, background story, and preferences for the user"],
+                            target_scope= "user_bio",
+                            limit_per_query= 5
+                        )
+                    user_bio_context = await user_bio.execute()
+                    pharased_bio = user_bio_context[0].get("content", "")
+                    
+                
+                
+
+                
+                # print("INFORMATION REQUEST DETECTED :", rephrase)
+               
 
             # final_prompt = await self._build_prompt_stack(text, session_data, tools_context)
             
@@ -568,21 +659,21 @@ class FlowtruAgent:
             # credit_decision, credit_message = await approval.credit_check()
             # tool_decision, tool_message = await approval.tool_usage_check()
             # 1. Prepare your array of semantic queries
-            queries_to_search = ["FastAPI", "Python (programming language)"]
+            # queries_to_search = ["FastAPI", "Python (programming language)"]
 
-            # 2. Pass the required dependencies into the initializer
-            search_tool = ExternalAquire(
-                vector_db=self.vector_manager,  # Replace with where your VectorManager lives
-                db_access=self.access,  # Your DatabaseAccess instance
-                queries=queries_to_search,
-                max_results=3,                           # Optional: defaults to 4
-                bypass_cache=False                       # Optional: set to True for real-time news forced lookup
-            )
+            # # 2. Pass the required dependencies into the initializer
+            # search_tool = ExternalAquire(
+            #     vector_db=self.vector_manager,  # Replace with where your VectorManager lives
+            #     db_access=self.access,  # Your DatabaseAccess instance
+            #     queries=queries_to_search,
+            #     max_results=3,                           # Optional: defaults to 4
+            #     bypass_cache=False                       # Optional: set to True for real-time news forced lookup
+            # )
 
-            # 3. Execute the pipeline
-            context_payload = await search_tool.execute()
+            # # 3. Execute the pipeline
+            # context_payload = await search_tool.execute()
 
-            print(f"Search Tool Result: {context_payload}")
+            # print(f"Search Tool Result: {context_payload}")
             #=================================================================
             # order = {
             #             "type": "single",
