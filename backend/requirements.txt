@@ -18,3 +18,11 @@ PyJWT==2.10.1
 python-multipart
 supabase
 pytz
+# --- Scraper & Crawler Deep Dependencies ---
+curl-cffi
+playwright
+beautifulsoup4
+markdownify
+google-genai
+mistralai
+rank-bm25

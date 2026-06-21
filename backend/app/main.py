@@ -112,6 +112,15 @@ async def lifespan(app: FastAPI):
 
     # 7. CLEANUP
     logger.info("Shutting down Flowtru Assistant API...")
+    if hasattr(app.state, "monitor") and app.state.monitor is not None:
+        try:
+            # Assuming your Monitor class has a stop() or cancel() method
+            await app.state.monitor.stop() 
+            logger.info("✅ Background monitors stopped cleanly.")
+        except Exception as e:
+            logger.error(f"Error stopping monitor: {e}")
+
+    # 2. CLOSE THE MONGO CONNECTION LAST 🔌
     await mongo.close_connection()
 
 
@@ -356,7 +365,7 @@ async def debug_dispatcher(text: str = Query(..., description="The message to an
 
 
 @app.get("/api/v1/debug/vector-inspect")
-async def inspect_vector_db(collection_name: str = "system_tools"):
+async def inspect_vector_db(collection_name: str = "internet_knowledge"):
     """
     Directly peek into a ChromaDB collection to see stored documents and metadata.
     """

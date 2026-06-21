@@ -56,6 +56,12 @@ class MongoConnection:
             logger.info(f"✅ MongoDB connected: {self.database_name}")
         except Exception as e:
             logger.error(f"❌ MongoDB Connection Error: {e}")
+    
+    # Close the MongoDB connection cleanly
+    async def close_connection(self):
+        if self.client:
+            self.client.close()
+            logger.info("🔌 MongoDB connection closed cleanly.")
 
     def attach_to_app(self, app):
         if self.db is None:
@@ -291,9 +297,10 @@ class VectorConnection:
             logger.info(f"Loading embedding model: {model_name}...")
             self.model = SentenceTransformer(model_name)
 
+
             # 2. Connect to ChromaDB
-            host = os.getenv("CHROMA_HOST", "chromadb")
-            port = int(os.getenv("CHROMA_PORT", 8000))
+            host = os.getenv("CHROMA_HOST", "127.0.0.1")  
+            port = int(os.getenv("CHROMA_PORT", 8001))
 
             self.client = chromadb.HttpClient(
                 host=host,

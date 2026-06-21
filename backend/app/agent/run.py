@@ -583,22 +583,40 @@ class FlowtruAgent:
                 "parameters": {
                     "vector_db": "",
                     "db_access": "",
-                    "queries": [
-                        "python programming language",
-                        "What is FastAPI?",
-                        "java programming language",
-                        "javascript programming language",
-                       
-                    ],
+                    "query": "top 20 artist 2026 worldwide",
                     "max_results": 3,
                     "bypass_cache": True
                 }
             }
         ]
                      }
-                tool_call = Execute(order=order, user_id=safe_email, data_state = self.data_state, db_instance = self.access, vector_manager=self.vector_manager)
-                result = await tool_call.run()
-                print("Execution Result:", result)
+                # tool_call = Execute(order=order, user_id=safe_email, data_state = self.data_state, db_instance = self.access, vector_manager=self.vector_manager)
+                # result = await tool_call.run()
+                # print("Execution Result:", result)
+
+                external_result = ExternalAquire(
+                        user_email=self.email,
+                        vector_db=self.vector_manager,  # Replace with where your VectorManager lives
+                        db_access=self.access,  # Your DatabaseAccess instance
+                        query="top 20 artist 2026 worldwide",
+                        cache_queries=[
+                            "What are the top 20 most streamed artists worldwide in 2026 according to Spotify, Apple Music, and YouTube?",
+            "Which musicians have achieved the highest global tour revenue in 2026 based on Billboard Boxscore data?",
+            "Who are the recipients of major 2026 music awards (Grammys, Billboard Music Awards, American Music Awards, MTV VMAs)?",
+            "What artists have the highest social media following and engagement metrics in 2026?",
+            "Which musicians have the most certified units sold worldwide in 2026 according to IFPI and RIAA?",
+            "What are the top 20 globally influential artists in 2026 based on cultural impact across different regions?",
+            "Which artists have dominated multiple international music charts simultaneously in 2026?",
+            "What is the current net worth and commercial brand value of potential top 20 artists in 2026?",
+            "Which musicians have broken historical streaming records in 2026?",
+            "What are the top 20 most critically acclaimed albums and singles of 2026 according to major music publications?"
+                            ],
+                        max_results=1,                           # Optional: defaults to 4
+                        bypass_cache=False  
+                            
+                        )
+                external_result_context = await external_result.execute()
+               
 
                 ignore_list = ["execution_order","quick_reply", "about" ,"intent"]
                 change_list = {"prompt":"role"}
@@ -617,15 +635,17 @@ class FlowtruAgent:
                     final_output += heading + body + "\n\n"
                 # getting user bio if needed:
                 if rephrase.get("about"):
-                    user_bio = Aquire(
-                            vector_db=self.vector_manager,
-                            email = self.email,
-                            queries=["Complete identity summary, background story, and preferences for the user"],
-                            target_scope= "user_bio",
-                            limit_per_query= 5
-                        )
-                    user_bio_context = await user_bio.execute()
-                    pharased_bio = user_bio_context[0].get("content", "")
+                    # external_result = ExternalAquire(
+                    #          vector_db=self.vector_manager,  # Replace with where your VectorManager lives
+                    #     db_access=self.access,  # Your DatabaseAccess instance
+                    #     query="top 20 artist 2026 worldwide",
+                    #     max_results=1,                           # Optional: defaults to 4
+                    #     bypass_cache=True  
+                            
+                    #     )
+                    # external_result_context = await external_result.execute()
+                    # print ("EXTERNAL RESULT CONTEXT:", external_result_context)
+                        pass
                     
                 
                 

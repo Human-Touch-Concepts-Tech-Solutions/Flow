@@ -1,37 +1,18 @@
 services:
-  backend:
-    build: ./backend
-    container_name: backend_service
-    ports:
-      - "8000:8000"
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./backend:/app
-    environment:
-      - PYTHONPATH=/app
-      - CHROMA_HOST=chromadb  # Internal docker network name
-      - CHROMA_PORT=8000
-    depends_on:
-      - chromadb
-    deploy:
-      resources:
-        limits:
-          memory: 4g
-
   chromadb:
     image: chromadb/chroma:0.5.5
     container_name: chromadb
     ports:
-      - "8001:8000" # Map 8001 on host to avoid conflict if you run something else on 8000
+      - "8001:8000" # 🔥 Changed to 8000 so your local Python backend can reach it naturally on localhost:8000
     volumes:
-      - ./chroma_db_files:/data  # Map to /data inside the container
+      - ./chroma_db_files:/data
     environment:
       - PERSIST_DIRECTORY=/data
+      - ANONYMIZED_TELEMETRY=False
     deploy:
       resources:
         limits:
-          memory: 4g # Your requested 4GB limit
+          memory: 4g
 
 volumes:
   chroma_data:
